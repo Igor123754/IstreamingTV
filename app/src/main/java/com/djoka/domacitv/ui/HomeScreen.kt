@@ -1,11 +1,12 @@
 package com.djoka.domacitv.ui
 
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -19,52 +20,59 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
-import com.djoka.domacitv.data.CatalogRow
+import com.djoka.domacitv.data.GridItem
+import com.djoka.domacitv.data.HeroItem
 import com.djoka.domacitv.data.HomeViewModel
-import com.djoka.domacitv.data.MetaPreview
 
 @Composable
 fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
+    val currentHero = state.heroItems.getOrNull(state.heroIndex)
 
-    Box(
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
+            .verticalScroll(rememberScrollState())
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
-            state.featured?.let { HeroSection(it) }
-            Spacer(modifier = Modifier.height(24.dp))
-            state.rows.forEach { row ->
-                CatalogRowSection(row)
-                Spacer(modifier = Modifier.height(24.dp))
-            }
+        // Hero banner - fanart preko celog ekrana
+        Box(modifier = Modifier.fillMaxWidth().height(1000.dp)) {
+            currentHero?.let { HeroSection(it) }
+        }
+
+        Spacer(modifier = Modifier.height(32.dp))
+
+        // Katalog stranica - odvojeno filmovi i serije, vertikalni posteri, bez brojeva
+        if (state.popularMovies.isNotEmpty()) {
+            CatalogRowSection(title = "Najpopularniji filmovi", items = state.popularMovies)
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+        if (state.popularSeries.isNotEmpty()) {
+            CatalogRowSection(title = "Najpopularnije serije", items = state.popularSeries)
+            Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @Composable
-private fun HeroSection(item: MetaPreview) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(480.dp)
-    ) {
+private fun HeroSection(item: HeroItem) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Fanart pozadina - 100% velicine hero sekcije
         AsyncImage(
-            model = item.background ?: item.poster,
-            contentDescription = item.name,
+            model = item.backdropUrl,
+            contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize()
         )
-        // Gradijent preko slike - tamniji ka levo/dole radi čitljivosti teksta
+
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.horizontalGradient(
-                        colors = listOf(Color.Black.copy(alpha = 0.9f), Color.Transparent),
+                        colors = listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent),
                         startX = 0f,
-                        endX = 900f
+                        endX = 1400f
                     )
                 )
         )
@@ -74,7 +82,7 @@ private fun HeroSection(item: MetaPreview) {
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(Color.Transparent, Color.Black),
-                        startY = 300f
+                        startY = 500f
                     )
                 )
         )
@@ -82,23 +90,33 @@ private fun HeroSection(item: MetaPreview) {
         Column(
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .padding(start = 48.dp, bottom = 40.dp, end = 400.dp)
+                .padding(start = 48.dp, bottom = 56.dp, end = 500.dp)
         ) {
-            Text(
-                text = item.name,
-                color = Color.White,
-                fontSize = 40.sp,
-                fontWeight = FontWeight.Bold
-            )
-            item.genres?.firstOrNull()?.let { genre ->
-                Spacer(modifier = Modifier.height(8.dp))
+            // Clearlogo ako postoji, inace naslov tekstom
+            if (item.logoUrl != null) {
+                AsyncImage(
+                    model = item.logoUrl,
+                    contentDescription = item.title,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .height(120.dp)
+                        .widthIn(max = 500.dp)
+                )
+            } else {
                 Text(
-                    text = genre,
-                    color = Color.White.copy(alpha = 0.7f),
-                    fontSize = 14.sp
+                    text = item.title,
+                    color = Color.White,
+                    fontSize = 40.sp,
+                    fontWeight = FontWeight.Bold
                 )
             }
-            item.description?.let { desc ->
+
+            item.genre?.let { genre ->
+                Spacer(modifier = Modifier.height(10.dp))
+                Text(text = genre, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+            }
+
+            item.overview?.let { desc ->
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
                     text = desc,
@@ -107,13 +125,11 @@ private fun HeroSection(item: MetaPreview) {
                     maxLines = 3
                 )
             }
+
             Spacer(modifier = Modifier.height(16.dp))
             Button(
-                onClick = { /* TODO: otvori detalje / addon stream picker */ },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.White,
-                    contentColor = Color.Black
-                ),
+                onClick = { /* TODO: detalji + izbor stream-a */ },
+                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                 shape = RoundedCornerShape(6.dp)
             ) {
                 Text("Pusti", fontWeight = FontWeight.SemiBold)
@@ -123,32 +139,25 @@ private fun HeroSection(item: MetaPreview) {
 }
 
 @Composable
-private fun CatalogRowSection(row: CatalogRow) {
+private fun CatalogRowSection(title: String, items: List<GridItem>) {
     Column(modifier = Modifier.padding(start = 48.dp)) {
-        Text(
-            text = row.title,
-            color = Color.White,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold
-        )
+        Text(text = title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
         LazyRow(
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(end = 48.dp)
         ) {
-            items(row.items) { meta ->
-                PosterCard(meta)
-            }
+            items(items) { meta -> PosterCard(meta) }
         }
     }
 }
 
 @Composable
-private fun PosterCard(meta: MetaPreview) {
+private fun PosterCard(item: GridItem) {
     Column(modifier = Modifier.width(140.dp)) {
         AsyncImage(
-            model = meta.poster,
-            contentDescription = meta.name,
+            model = item.posterUrl,
+            contentDescription = item.title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .width(140.dp)
@@ -156,11 +165,6 @@ private fun PosterCard(meta: MetaPreview) {
                 .clip(RoundedCornerShape(8.dp))
         )
         Spacer(modifier = Modifier.height(6.dp))
-        Text(
-            text = meta.name,
-            color = Color.White,
-            fontSize = 13.sp,
-            maxLines = 1
-        )
+        Text(text = item.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
     }
 }
