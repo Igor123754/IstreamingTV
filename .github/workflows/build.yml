@@ -25,6 +25,8 @@ jobs:
         uses: gradle/actions/setup-gradle@v3
 
       - name: Build debug APK
+        env:
+          ORG_GRADLE_PROJECT_TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
         run: gradle assembleDebug --no-daemon
 
       - name: Upload APK
