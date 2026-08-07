@@ -13,6 +13,7 @@ data class HeroItem(
     val id: Int,
     val title: String,
     val genre: String?,
+    val ageRating: String?,
     val overview: String?,
     val backdropUrl: String?,
     val logoUrl: String?
@@ -84,7 +85,7 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    // Vuče detalje + clearlogo na srpskom; ako opis fali na srpskom, dovuče engleski
+    // Vuče detalje + clearlogo + uzrasnu preporuku na srpskom; ako opis fali na srpskom, dovuče engleski
     private suspend fun buildHeroItem(id: Int, isMovie: Boolean): HeroItem {
         val detail = if (isMovie) api.movieDetail(id, apiKey) else api.tvDetail(id, apiKey)
 
@@ -106,10 +107,25 @@ class HomeViewModel : ViewModel() {
                     ?: logos.firstOrNull { it.iso_639_1 == "en" }
             }
 
+        val ageRating = if (isMovie) {
+            val countries = detail.release_dates?.results.orEmpty()
+            val rs = countries.firstOrNull { it.iso_3166_1 == "RS" }
+                ?.release_dates?.firstOrNull { !it.certification.isNullOrBlank() }?.certification
+            val us = countries.firstOrNull { it.iso_3166_1 == "US" }
+                ?.release_dates?.firstOrNull { !it.certification.isNullOrBlank() }?.certification
+            rs ?: us
+        } else {
+            val countries = detail.content_ratings?.results.orEmpty()
+            val rs = countries.firstOrNull { it.iso_3166_1 == "RS" }?.rating
+            val us = countries.firstOrNull { it.iso_3166_1 == "US" }?.rating
+            rs ?: us
+        }
+
         return HeroItem(
             id = id,
             title = detail.title ?: detail.name ?: "",
             genre = detail.genres?.firstOrNull()?.name,
+            ageRating = ageRating?.takeIf { it.isNotBlank() },
             overview = overview,
             backdropUrl = detail.backdrop_path?.let { TmdbApi.BACKDROP_URL + it },
             logoUrl = logo?.let { TmdbApi.LOGO_URL + it.file_path }
