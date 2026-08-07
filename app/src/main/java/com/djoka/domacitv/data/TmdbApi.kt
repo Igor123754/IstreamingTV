@@ -22,6 +22,15 @@ data class TmdbGenre(val name: String)
 data class TmdbLogo(val file_path: String, val iso_639_1: String? = null)
 data class TmdbImages(val logos: List<TmdbLogo> = emptyList())
 
+// --- Uzrasna preporuka (starosno ograničenje) - filmovi ---
+data class ReleaseDateInfo(val certification: String? = null)
+data class ReleaseDatesCountry(val iso_3166_1: String, val release_dates: List<ReleaseDateInfo> = emptyList())
+data class ReleaseDatesWrapper(val results: List<ReleaseDatesCountry> = emptyList())
+
+// --- Uzrasna preporuka - serije ---
+data class ContentRatingCountry(val iso_3166_1: String, val rating: String? = null)
+data class ContentRatingsWrapper(val results: List<ContentRatingCountry> = emptyList())
+
 data class TmdbDetail(
     val id: Int,
     val title: String? = null,
@@ -29,7 +38,9 @@ data class TmdbDetail(
     val overview: String? = null,
     val backdrop_path: String? = null,
     val genres: List<TmdbGenre>? = null,
-    val images: TmdbImages? = null
+    val images: TmdbImages? = null,
+    val release_dates: ReleaseDatesWrapper? = null,
+    val content_ratings: ContentRatingsWrapper? = null
 )
 
 interface TmdbApi {
@@ -60,13 +71,13 @@ interface TmdbApi {
         @Query("page") page: Int = 1
     ): TmdbListResponse
 
-    // append_to_response=images vraća i clearlogo/backdrop u istom pozivu
+    // append_to_response vraća clearlogo i uzrasnu preporuku u istom pozivu
     @GET("movie/{id}")
     suspend fun movieDetail(
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "sr-RS",
-        @Query("append_to_response") append: String = "images",
+        @Query("append_to_response") append: String = "images,release_dates",
         @Query("include_image_language") includeImageLanguage: String = "sr,en,null"
     ): TmdbDetail
 
@@ -75,7 +86,7 @@ interface TmdbApi {
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "sr-RS",
-        @Query("append_to_response") append: String = "images",
+        @Query("append_to_response") append: String = "images,content_ratings",
         @Query("include_image_language") includeImageLanguage: String = "sr,en,null"
     ): TmdbDetail
 
