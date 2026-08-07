@@ -1,6 +1,8 @@
 package com.djoka.domacitv.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,8 +37,8 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             .background(Color.Black)
             .verticalScroll(rememberScrollState())
     ) {
-        // Hero banner - fanart preko celog ekrana
-        Box(modifier = Modifier.fillMaxWidth().height(1000.dp)) {
+        // Hero banner - fanart, ali normalne visine (ne preko celog ekrana)
+        Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
             currentHero?.let { HeroSection(it) }
         }
 
@@ -57,7 +59,6 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 @Composable
 private fun HeroSection(item: HeroItem) {
     Box(modifier = Modifier.fillMaxSize()) {
-        // Fanart pozadina - 100% velicine hero sekcije
         AsyncImage(
             model = item.backdropUrl,
             contentDescription = item.title,
@@ -72,7 +73,7 @@ private fun HeroSection(item: HeroItem) {
                     Brush.horizontalGradient(
                         colors = listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent),
                         startX = 0f,
-                        endX = 1400f
+                        endX = 1000f
                     )
                 )
         )
@@ -81,39 +82,53 @@ private fun HeroSection(item: HeroItem) {
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black),
-                        startY = 500f
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.4f)),
+                        startY = 250f
                     )
                 )
         )
 
+        // Tekst/logo centriran po visini hero-a (kao na Apple TV+), ne zalepljen za dno
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = 48.dp, bottom = 56.dp, end = 500.dp)
+                .align(Alignment.CenterStart)
+                .padding(start = 48.dp, end = 500.dp)
         ) {
-            // Clearlogo ako postoji, inace naslov tekstom
             if (item.logoUrl != null) {
                 AsyncImage(
                     model = item.logoUrl,
                     contentDescription = item.title,
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .height(120.dp)
-                        .widthIn(max = 500.dp)
+                        .height(90.dp)
+                        .widthIn(max = 420.dp)
                 )
             } else {
                 Text(
                     text = item.title,
                     color = Color.White,
-                    fontSize = 40.sp,
+                    fontSize = 36.sp,
                     fontWeight = FontWeight.Bold
                 )
             }
 
-            item.genre?.let { genre ->
+            if (item.genre != null || item.ageRating != null) {
                 Spacer(modifier = Modifier.height(10.dp))
-                Text(text = genre, color = Color.White.copy(alpha = 0.7f), fontSize = 14.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    item.genre?.let { genre ->
+                        Text(text = genre, color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                    }
+                    item.ageRating?.let { rating ->
+                        if (item.genre != null) Spacer(modifier = Modifier.width(10.dp))
+                        Box(
+                            modifier = Modifier
+                                .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.6f)), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(text = rating, color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+                        }
+                    }
+                }
             }
 
             item.overview?.let { desc ->
