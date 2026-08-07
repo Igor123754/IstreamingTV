@@ -53,6 +53,12 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             CatalogRowSection(title = "Najpopularnije serije", items = state.popularSeries)
             Spacer(modifier = Modifier.height(32.dp))
         }
+
+        // Zanrovski katalozi sa Domaci Filmovi addon-a (filmovi i serije, sve sto addon nudi)
+        state.addonCatalogs.forEach { row ->
+            CatalogRowSection(title = row.title, items = row.items)
+            Spacer(modifier = Modifier.height(32.dp))
+        }
     }
 }
 
