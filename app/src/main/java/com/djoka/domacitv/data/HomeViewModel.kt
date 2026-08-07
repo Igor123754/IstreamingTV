@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -101,7 +102,7 @@ class HomeViewModel : ViewModel() {
     }
 
     // Cita manifest addon-a i sam otkriva sve njegove kataloge (zanrovi za filmove i serije)
-    private suspend fun loadAddonCatalogs(): List<CatalogRow> {
+    private suspend fun loadAddonCatalogs(): List<CatalogRow> = coroutineScope {
         val manifest = addonApi.manifest()
         val relevantCatalogs = manifest.catalogs.filter { it.type == "movie" || it.type == "series" }
 
@@ -126,7 +127,7 @@ class HomeViewModel : ViewModel() {
             }
         }.awaitAll()
 
-        return rows.filterNotNull()
+        rows.filterNotNull()
     }
 
     // Vuče detalje + clearlogo + uzrasnu preporuku na srpskom; ako opis fali na srpskom, dovuče engleski
