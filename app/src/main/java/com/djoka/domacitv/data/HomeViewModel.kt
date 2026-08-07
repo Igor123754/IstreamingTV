@@ -20,9 +20,14 @@ data class HeroItem(
 )
 
 data class GridItem(
-    val id: Int,
+    val id: String,
     val title: String,
     val posterUrl: String?
+)
+
+data class CatalogRow(
+    val title: String,
+    val items: List<GridItem>
 )
 
 data class HomeUiState(
@@ -30,13 +35,15 @@ data class HomeUiState(
     val heroIndex: Int = 0,
     val popularMovies: List<GridItem> = emptyList(),
     val popularSeries: List<GridItem> = emptyList(),
+    val addonCatalogs: List<CatalogRow> = emptyList(),
     val isLoading: Boolean = true
 )
 
 class HomeViewModel : ViewModel() {
 
-    private val api = TmdbApi.create()
+    private val tmdb = TmdbApi.create()
     private val apiKey = TmdbApi.key()
+    private val addonApi = StremioAddonApi.create(StremioAddonApi.DOMACI_ADDON_URL)
 
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState
@@ -49,34 +56,42 @@ class HomeViewModel : ViewModel() {
     private fun loadHome() {
         viewModelScope.launch {
             try {
-                // Top 10 trending filmova + top 10 trending serija za hero rotaciju
-                val trendingMovies = api.trendingMovies(apiKey).results.take(10)
-                val trendingSeries = api.trendingTv(apiKey).results.take(10)
+                // Top 10 trending filmova + top 10 trending serija za hero rotaciju (TMDB)
+                val trendingMovies = tmdb.trendingMovies(apiKey).results.take(10)
+                val trendingSeries = tmdb.trendingTv(apiKey).results.take(10)
 
                 val heroMovies = trendingMovies.map { async { buildHeroItem(it.id, isMovie = true) } }
                 val heroSeries = trendingSeries.map { async { buildHeroItem(it.id, isMovie = false) } }
                 val heroItems = (heroMovies + heroSeries).awaitAll()
 
-                // Katalozi ispod - najpopularniji filmovi/serije (portret posteri)
-                val popularMovies = api.popularMovies(apiKey).results.map {
+                // Najpopularniji filmovi/serije - TMDB
+                val popularMovies = tmdb.popularMovies(apiKey).results.map {
                     GridItem(
-                        id = it.id,
+                        id = it.id.toString(),
                         title = it.title ?: "",
                         posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p }
                     )
                 }
-                val popularSeries = api.popularTv(apiKey).results.map {
+                val popularSeries = tmdb.popularTv(apiKey).results.map {
                     GridItem(
-                        id = it.id,
+                        id = it.id.toString(),
                         title = it.name ?: "",
                         posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p }
                     )
+                }
+
+                // Katalozi sa tvog Stremio addon-a (žanrovski, filmovi i serije)
+                val addonCatalogs = try {
+                    loadAddonCatalogs()
+                } catch (e: Exception) {
+                    emptyList()
                 }
 
                 _uiState.value = _uiState.value.copy(
                     heroItems = heroItems,
                     popularMovies = popularMovies,
                     popularSeries = popularSeries,
+                    addonCatalogs = addonCatalogs,
                     isLoading = false
                 )
             } catch (e: Exception) {
@@ -85,16 +100,45 @@ class HomeViewModel : ViewModel() {
         }
     }
 
+    // Cita manifest addon-a i sam otkriva sve njegove kataloge (zanrovi za filmove i serije)
+    private suspend fun loadAddonCatalogs(): List<CatalogRow> {
+        val manifest = addonApi.manifest()
+        val relevantCatalogs = manifest.catalogs.filter { it.type == "movie" || it.type == "series" }
+
+        val rows = relevantCatalogs.map { cat ->
+            async {
+                try {
+                    val metas = addonApi.catalog(cat.type, cat.id).metas
+                    if (metas.isEmpty()) return@async null
+                    CatalogRow(
+                        title = cat.name ?: cat.id,
+                        items = metas.map { meta ->
+                            GridItem(
+                                id = meta.id,
+                                title = meta.name ?: "",
+                                posterUrl = meta.poster
+                            )
+                        }
+                    )
+                } catch (e: Exception) {
+                    null
+                }
+            }
+        }.awaitAll()
+
+        return rows.filterNotNull()
+    }
+
     // Vuče detalje + clearlogo + uzrasnu preporuku na srpskom; ako opis fali na srpskom, dovuče engleski
     private suspend fun buildHeroItem(id: Int, isMovie: Boolean): HeroItem {
-        val detail = if (isMovie) api.movieDetail(id, apiKey) else api.tvDetail(id, apiKey)
+        val detail = if (isMovie) tmdb.movieDetail(id, apiKey) else tmdb.tvDetail(id, apiKey)
 
         var overview = detail.overview
         if (overview.isNullOrBlank()) {
             val fallback = if (isMovie) {
-                api.movieDetail(id, apiKey, language = "en-US")
+                tmdb.movieDetail(id, apiKey, language = "en-US")
             } else {
-                api.tvDetail(id, apiKey, language = "en-US")
+                tmdb.tvDetail(id, apiKey, language = "en-US")
             }
             overview = fallback.overview
         }
