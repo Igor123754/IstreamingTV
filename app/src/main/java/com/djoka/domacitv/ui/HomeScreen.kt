@@ -3,6 +3,8 @@ package com.djoka.domacitv.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -14,6 +16,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
@@ -22,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
+import com.djoka.domacitv.data.CatalogRow
 import com.djoka.domacitv.data.GridItem
 import com.djoka.domacitv.data.HeroItem
 import com.djoka.domacitv.data.HomeViewModel
@@ -31,20 +38,26 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
     val currentHero = state.heroItems.getOrNull(state.heroIndex)
 
+    // Fokus koji "Pusti" dugme dobija cim se ekran otvori - bez ovoga TV daljinski
+    // nema od cega da krene (nijedan element nije fokusiran, pa strelice ne rade nista)
+    val playButtonFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        playButtonFocusRequester.requestFocus()
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
             .verticalScroll(rememberScrollState())
     ) {
-        // Hero banner - fanart, ali normalne visine (ne preko celog ekrana)
+        // Hero banner - fanart, normalne visine
         Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
-            currentHero?.let { HeroSection(it) }
+            currentHero?.let { HeroSection(it, playButtonFocusRequester) }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
-        // Katalog stranica - odvojeno filmovi i serije, vertikalni posteri, bez brojeva
         if (state.popularMovies.isNotEmpty()) {
             CatalogRowSection(title = "Najpopularniji filmovi", items = state.popularMovies)
             Spacer(modifier = Modifier.height(32.dp))
@@ -54,7 +67,6 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
             Spacer(modifier = Modifier.height(32.dp))
         }
 
-        // Zanrovski katalozi sa Domaci Filmovi addon-a (filmovi i serije, sve sto addon nudi)
         state.addonCatalogs.forEach { row ->
             CatalogRowSection(title = row.title, items = row.items)
             Spacer(modifier = Modifier.height(32.dp))
@@ -63,7 +75,7 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
 }
 
 @Composable
-private fun HeroSection(item: HeroItem) {
+private fun HeroSection(item: HeroItem, playButtonFocusRequester: FocusRequester) {
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
             model = item.backdropUrl,
@@ -94,7 +106,6 @@ private fun HeroSection(item: HeroItem) {
                 )
         )
 
-        // Tekst/logo centriran po visini hero-a (kao na Apple TV+), ne zalepljen za dno
         Column(
             modifier = Modifier
                 .align(Alignment.CenterStart)
@@ -105,17 +116,10 @@ private fun HeroSection(item: HeroItem) {
                     model = item.logoUrl,
                     contentDescription = item.title,
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .height(90.dp)
-                        .widthIn(max = 420.dp)
+                    modifier = Modifier.height(90.dp).widthIn(max = 420.dp)
                 )
             } else {
-                Text(
-                    text = item.title,
-                    color = Color.White,
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                Text(text = item.title, color = Color.White, fontSize = 36.sp, fontWeight = FontWeight.Bold)
             }
 
             if (item.genre != null || item.ageRating != null) {
@@ -139,19 +143,24 @@ private fun HeroSection(item: HeroItem) {
 
             item.overview?.let { desc ->
                 Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = desc,
-                    color = Color.White.copy(alpha = 0.85f),
-                    fontSize = 15.sp,
-                    maxLines = 3
-                )
+                Text(text = desc, color = Color.White.copy(alpha = 0.85f), fontSize = 15.sp, maxLines = 3)
             }
 
             Spacer(modifier = Modifier.height(16.dp))
+
+            var isFocused by remember { mutableStateOf(false) }
             Button(
                 onClick = { /* TODO: detalji + izbor stream-a */ },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-                shape = RoundedCornerShape(6.dp)
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier
+                    .focusRequester(playButtonFocusRequester)
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .scale(if (isFocused) 1.08f else 1f)
+                    .then(
+                        if (isFocused) Modifier.border(BorderStroke(2.dp, Color.White), RoundedCornerShape(6.dp))
+                        else Modifier
+                    )
             ) {
                 Text("Pusti", fontWeight = FontWeight.SemiBold)
             }
@@ -175,7 +184,16 @@ private fun CatalogRowSection(title: String, items: List<GridItem>) {
 
 @Composable
 private fun PosterCard(item: GridItem) {
-    Column(modifier = Modifier.width(140.dp)) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Column(
+        modifier = Modifier
+            .width(140.dp)
+            .focusable()
+            .clickable { /* TODO: otvori detalje naslova */ }
+            .onFocusChanged { isFocused = it.isFocused }
+            .scale(if (isFocused) 1.08f else 1f)
+    ) {
         AsyncImage(
             model = item.posterUrl,
             contentDescription = item.title,
@@ -184,6 +202,10 @@ private fun PosterCard(item: GridItem) {
                 .width(140.dp)
                 .height(210.dp)
                 .clip(RoundedCornerShape(8.dp))
+                .then(
+                    if (isFocused) Modifier.border(BorderStroke(3.dp, Color.White), RoundedCornerShape(8.dp))
+                    else Modifier
+                )
         )
         Spacer(modifier = Modifier.height(6.dp))
         Text(text = item.title, color = Color.White, fontSize = 13.sp, maxLines = 1)
