@@ -39,10 +39,17 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     val currentHero = state.heroItems.getOrNull(state.heroIndex)
 
     // Fokus koji "Pusti" dugme dobija cim se ekran otvori - bez ovoga TV daljinski
-    // nema od cega da krene (nijedan element nije fokusiran, pa strelice ne rade nista)
+    // nema od cega da krene. Cekamo da hero stvarno postoji (dugme se renderuje tek
+    // kad TMDB podaci stignu) - inace FocusRequester puca jer cilja nepostojeci element.
     val playButtonFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        playButtonFocusRequester.requestFocus()
+    LaunchedEffect(currentHero != null) {
+        if (currentHero != null) {
+            try {
+                playButtonFocusRequester.requestFocus()
+            } catch (e: Exception) {
+                // Ignorisi - element jos nije spreman za fokus, nije kriticno
+            }
+        }
     }
 
     Column(
