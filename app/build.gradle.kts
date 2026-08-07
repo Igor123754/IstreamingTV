@@ -21,8 +21,15 @@ android {
         }
     }
 
+    val tmdbApiKey: String = (project.findProperty("TMDB_API_KEY") as String?) ?: ""
+
+    defaultConfig {
+        buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
+    }
+
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
