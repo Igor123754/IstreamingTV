@@ -89,6 +89,10 @@ interface StremioAddonApi {
         // Tvoj addon sa domaćim filmovima/serijama sortiranim po žanru
         const val DOMACI_ADDON_URL = "https://domaci-filmovi-addon.vercel.app/"
 
+        // Strani sadrzaj, samo 1080p linkovi (koristi se samo za stream, nema svoj katalog na pocetnoj)
+        const val FOREIGN_ADDON_URL =
+            "https://hdhub.thevolecitor.qzz.io/eyJ0b3Jib3giOiJ1bnNldCIsInF1YWxpdGllcyI6IjEwODBwIiwic29ydCI6ImRlc2MiLCJjYXRhbG9ncyI6IiJ9/"
+
         fun create(baseUrl: String): StremioAddonApi {
             val retrofit = Retrofit.Builder()
                 .baseUrl(baseUrl)
