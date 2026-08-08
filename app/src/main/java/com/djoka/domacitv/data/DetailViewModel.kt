@@ -6,6 +6,20 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
+data class SeasonItem(
+    val seasonNumber: Int,
+    val name: String,
+    val posterUrl: String?
+)
+
+data class EpisodeItem(
+    val episodeNumber: Int,
+    val name: String,
+    val overview: String?,
+    val stillUrl: String?,
+    val rating: Double?
+)
+
 data class DetailUiState(
     val title: String = "",
     val logoUrl: String? = null,
@@ -16,6 +30,10 @@ data class DetailUiState(
     val ageRating: String? = null,
     val overview: String? = null,
     val cast: String? = null,
+    val collectionMovies: List<GridItem> = emptyList(),   // nastavci filma
+    val seasons: List<SeasonItem> = emptyList(),          // sezone serije
+    val selectedSeason: Int? = null,
+    val episodes: List<EpisodeItem> = emptyList(),
     val isLoading: Boolean = true,
     val notFound: Boolean = false
 )
@@ -25,6 +43,9 @@ class DetailViewModel : ViewModel() {
     private val tmdb = TmdbApi.create()
     private val apiKey = TmdbApi.key()
 
+    private var resolvedTmdbId: Int? = null
+    private var isMovieType: Boolean = true
+
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState
 
@@ -33,14 +54,15 @@ class DetailViewModel : ViewModel() {
             _uiState.value = DetailUiState(isLoading = true)
             try {
                 val isMovie = type == "movie"
+                isMovieType = isMovie
 
-                // Addon stavke imaju IMDB id (npr. "tt1234567") - te prvo prevodimo u TMDB id
                 val tmdbId = rawId.toIntOrNull() ?: resolveImdbId(rawId, isMovie)
 
                 if (tmdbId == null) {
                     _uiState.value = DetailUiState(isLoading = false, notFound = true)
                     return@launch
                 }
+                resolvedTmdbId = tmdbId
 
                 val detail = if (isMovie) tmdb.movieDetail(tmdbId, apiKey) else tmdb.tvDetail(tmdbId, apiKey)
 
@@ -87,6 +109,37 @@ class DetailViewModel : ViewModel() {
 
                 val cast = detail.credits?.cast?.take(4)?.joinToString(", ") { it.name }
 
+                // Nastavci filma (ako pripada kolekciji)
+                val collectionMovies = if (isMovie && detail.belongs_to_collection != null) {
+                    try {
+                        tmdb.collection(detail.belongs_to_collection.id, apiKey).parts
+                            .filter { it.id != tmdbId }
+                            .map {
+                                GridItem(
+                                    id = it.id.toString(),
+                                    type = "movie",
+                                    title = it.title ?: "",
+                                    posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p }
+                                )
+                            }
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                } else emptyList()
+
+                // Sezone serije (samo one koje imaju poster)
+                val seasons = if (!isMovie) {
+                    detail.seasons
+                        ?.filter { it.season_number > 0 && it.poster_path != null }
+                        ?.map {
+                            SeasonItem(
+                                seasonNumber = it.season_number,
+                                name = it.name ?: "Sezona ${it.season_number}",
+                                posterUrl = TmdbApi.POSTER_URL + it.poster_path
+                            )
+                        } ?: emptyList()
+                } else emptyList()
+
                 _uiState.value = DetailUiState(
                     title = detail.title ?: detail.name ?: "",
                     logoUrl = logo?.let { TmdbApi.LOGO_URL + it.file_path },
@@ -97,10 +150,38 @@ class DetailViewModel : ViewModel() {
                     ageRating = ageRating?.takeIf { it.isNotBlank() },
                     overview = overview,
                     cast = cast?.takeIf { it.isNotBlank() },
+                    collectionMovies = collectionMovies,
+                    seasons = seasons,
                     isLoading = false
                 )
+
+                // Automatski ucitaj epizode prve sezone sa posterom
+                if (seasons.isNotEmpty()) {
+                    selectSeason(seasons.first().seasonNumber)
+                }
             } catch (e: Exception) {
                 _uiState.value = DetailUiState(isLoading = false, notFound = true)
+            }
+        }
+    }
+
+    fun selectSeason(seasonNumber: Int) {
+        val id = resolvedTmdbId ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
+            try {
+                val episodes = tmdb.tvSeason(id, seasonNumber, apiKey).episodes.map {
+                    EpisodeItem(
+                        episodeNumber = it.episode_number,
+                        name = it.name ?: "Epizoda ${it.episode_number}",
+                        overview = it.overview?.takeIf { o -> o.isNotBlank() },
+                        stillUrl = it.still_path?.let { p -> TmdbApi.STILL_URL + p },
+                        rating = it.vote_average?.takeIf { r -> r > 0 }
+                    )
+                }
+                _uiState.value = _uiState.value.copy(episodes = episodes)
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(episodes = emptyList())
             }
         }
     }
