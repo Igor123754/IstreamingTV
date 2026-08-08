@@ -22,8 +22,17 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.SeekParameters
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.djoka.domacitv.data.PlaybackHeaders
+
+private const val BROWSER_USER_AGENT =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 @UnstableApi
 @Composable
@@ -34,21 +43,50 @@ fun PlayerScreen(videoUrl: String) {
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val exoPlayer = remember {
-        ExoPlayer.Builder(context).build().apply {
-            addListener(object : Player.Listener {
-                override fun onPlaybackStateChanged(state: Int) {
-                    isBuffering = state == Player.STATE_BUFFERING
-                }
+        // Headers koje je addon vratio za ovaj konkretan link (ok.ru, doodstream i sl. ih zahtevaju).
+        // "Potrosimo" ih odmah da se ne bi slucajno iskoristile za sledeci, drugaciji video.
+        val customHeaders = PlaybackHeaders.headers
+        PlaybackHeaders.headers = null
 
-                override fun onPlayerError(error: PlaybackException) {
-                    // Prikazujemo pravi razlog na ekranu umesto da video samo "visi" bez objasnjenja
-                    errorMessage = "${error.errorCodeName}: ${error.message}"
-                }
-            })
-            setMediaItem(MediaItem.fromUri(videoUrl))
-            prepare()
-            playWhenReady = true
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
+            setUserAgent(customHeaders?.get("User-Agent") ?: customHeaders?.get("user-agent") ?: BROWSER_USER_AGENT)
+            if (!customHeaders.isNullOrEmpty()) {
+                setDefaultRequestProperties(customHeaders)
+            }
+            setAllowCrossProtocolRedirects(true)
         }
+        val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory))
+
+        // Manji buffer pre starta = brzi pocetak i brze premotavanje (manje cekanja posle seek-a)
+        val loadControl = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                /* minBufferMs = */ 15_000,
+                /* maxBufferMs = */ 50_000,
+                /* bufferForPlaybackMs = */ 1_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+            )
+            .build()
+
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(loadControl)
+            .build().apply {
+                // Priblizan (brzi) seek umesto tacnog frame-a - premotavanje deluje skoro trenutno
+                setSeekParameters(SeekParameters.CLOSEST_SYNC)
+
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(state: Int) {
+                        isBuffering = state == Player.STATE_BUFFERING
+                    }
+
+                    override fun onPlayerError(error: PlaybackException) {
+                        errorMessage = "${error.errorCodeName}: ${error.message}"
+                    }
+                })
+                setMediaItem(MediaItem.fromUri(videoUrl))
+                prepare()
+                playWhenReady = true
+            }
     }
 
     DisposableEffect(Unit) {
