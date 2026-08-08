@@ -51,7 +51,10 @@ fun DomaciTVApp() {
                 DetailScreen(
                     type = type,
                     id = id,
-                    onBack = { navController.popBackStack() }
+                    onBack = { navController.popBackStack() },
+                    onItemClick = { itemType, itemId ->
+                        navController.navigate("detail/$itemType/$itemId")
+                    }
                 )
             }
         }
