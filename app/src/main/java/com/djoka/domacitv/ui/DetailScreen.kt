@@ -4,9 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,123 +34,131 @@ fun DetailScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (state.isLoading) {
-            CircularProgressIndicator(
-                color = Color.White,
-                modifier = Modifier.align(Alignment.Center)
-            )
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
             return@Box
         }
         if (state.notFound) {
-            Text(
-                text = "Nije pronađeno",
-                color = Color.White,
-                modifier = Modifier.align(Alignment.Center)
-            )
+            Text(text = "Nije pronađeno", color = Color.White, modifier = Modifier.align(Alignment.Center))
             return@Box
         }
 
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        // Fanart - 100% ekrana, sve ostalo je prekriveno preko nje (kao referenca)
+        AsyncImage(
+            model = state.backdropUrl,
+            contentDescription = state.title,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize()
+        )
 
-            // Backdrop slika sa naslovom preko nje
-            Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.horizontalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.85f), Color.Transparent),
+                        startX = 0f,
+                        endX = 900f
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.55f), Color.Black),
+                        startY = 200f
+                    )
+                )
+        )
+
+        // Naslov/logo - gore levo preko slike
+        Box(modifier = Modifier.align(Alignment.TopStart).padding(start = 48.dp, top = 40.dp)) {
+            if (state.logoUrl != null) {
                 AsyncImage(
-                    model = state.backdropUrl,
+                    model = state.logoUrl,
                     contentDescription = state.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.height(70.dp).widthIn(max = 380.dp)
                 )
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Black),
-                                startY = 250f
-                            )
-                        )
-                )
+            } else {
+                Text(text = state.title, color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            }
+        }
 
-                if (state.logoUrl != null) {
-                    AsyncImage(
-                        model = state.logoUrl,
-                        contentDescription = state.title,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 24.dp, bottom = 20.dp)
-                            .height(70.dp)
-                            .widthIn(max = 320.dp)
-                    )
-                } else {
-                    Text(
-                        text = state.title,
-                        color = Color.White,
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(start = 24.dp, bottom = 20.dp, end = 24.dp)
-                    )
+        // Donji red - dugmad / opis / uloge, sve preko slike (kao na referenci)
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(start = 48.dp, end = 48.dp, bottom = 32.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            // Dugmad - stubac, jedno ispod drugog (kao "Play Again" / "Added to Watchlist")
+            Column(modifier = Modifier.width(220.dp)) {
+                Button(
+                    onClick = { /* TODO: plejer */ },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("▶  Pusti", fontWeight = FontWeight.SemiBold)
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { /* TODO: biblioteka */ },
+                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
+                    shape = RoundedCornerShape(6.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("+  Dodaj na listu")
                 }
             }
 
-            Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp)) {
+            Spacer(modifier = Modifier.width(28.dp))
 
-                // Dugmad - Pusti / Dodaj na listu (bez funkcionalnosti dok ne dodamo plejer i biblioteku)
-                Row {
-                    Button(
-                        onClick = { /* TODO: plejer */ },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("▶  Pusti", fontWeight = FontWeight.SemiBold)
-                    }
-                    Spacer(modifier = Modifier.width(12.dp))
-                    OutlinedButton(
-                        onClick = { /* TODO: biblioteka */ },
-                        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)),
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text("+  Dodaj na listu")
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Info red - zanr, godina, trajanje, uzrasna preporuka
+            // Sredina - zanr/godina/trajanje/uzrast + opis
+            Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     val infoParts = listOfNotNull(state.genre, state.year, state.runtimeText)
                     if (infoParts.isNotEmpty()) {
                         Text(
                             text = infoParts.joinToString("   "),
                             color = Color.White.copy(alpha = 0.75f),
-                            fontSize = 14.sp
+                            fontSize = 13.sp
                         )
                     }
                     state.ageRating?.let { rating ->
-                        if (infoParts.isNotEmpty()) Spacer(modifier = Modifier.width(10.dp))
+                        if (infoParts.isNotEmpty()) Spacer(modifier = Modifier.width(8.dp))
                         Box(
                             modifier = Modifier
                                 .border(BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)), RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                .padding(horizontal = 5.dp, vertical = 1.dp)
                         ) {
-                            Text(text = rating, color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                            Text(text = rating, color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
                         }
                     }
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
-
+                Spacer(modifier = Modifier.height(6.dp))
                 state.overview?.let { overview ->
-                    Text(text = overview, color = Color.White.copy(alpha = 0.9f), fontSize = 15.sp, lineHeight = 21.sp)
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = overview,
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        maxLines = 3
+                    )
                 }
+            }
 
-                state.cast?.let { cast ->
-                    Text(text = "Uloge", color = Color.White.copy(alpha = 0.6f), fontSize = 13.sp)
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(text = cast, color = Color.White.copy(alpha = 0.9f), fontSize = 14.sp)
+            // Uloge - desna kolona (kao "Starring" na referenci)
+            state.cast?.let { cast ->
+                Spacer(modifier = Modifier.width(28.dp))
+                Column(modifier = Modifier.width(200.dp)) {
+                    Text(text = "Uloge", color = Color.White.copy(alpha = 0.6f), fontSize = 12.sp)
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(text = cast, color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp, lineHeight = 17.sp)
                 }
             }
         }
