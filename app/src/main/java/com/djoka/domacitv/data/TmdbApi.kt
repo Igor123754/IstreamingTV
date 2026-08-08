@@ -72,8 +72,12 @@ data class TmdbDetail(
     val release_date: String? = null,             // filmovi - "2023-05-31"
     val first_air_date: String? = null,           // serije
     val belongs_to_collection: TmdbCollectionRef? = null,  // filmovi - nastavci
-    val seasons: List<TmdbSeason>? = null                  // serije
+    val seasons: List<TmdbSeason>? = null,                 // serije
+    val imdb_id: String? = null,                  // filmovi - IMDB id (za pretragu stream linka)
+    val external_ids: TmdbExternalIds? = null      // serije - odavde vadimo IMDB id
 )
+
+data class TmdbExternalIds(val imdb_id: String? = null)
 
 // --- Rezultat pretrage po IMDB id-u (za stavke koje dolaze sa Stremio addon-a) ---
 data class TmdbFindResponse(
@@ -124,7 +128,7 @@ interface TmdbApi {
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "sr-RS",
-        @Query("append_to_response") append: String = "images,content_ratings,credits",
+        @Query("append_to_response") append: String = "images,content_ratings,credits,external_ids",
         @Query("include_image_language") includeImageLanguage: String = "sr,en,null"
     ): TmdbDetail
 
