@@ -12,6 +12,7 @@ import kotlinx.coroutines.launch
 
 data class HeroItem(
     val id: Int,
+    val type: String,       // "movie" ili "tv"
     val title: String,
     val genre: String?,
     val ageRating: String?,
@@ -22,6 +23,7 @@ data class HeroItem(
 
 data class GridItem(
     val id: String,
+    val type: String,       // "movie" ili "tv"
     val title: String,
     val posterUrl: String?
 )
@@ -57,7 +59,6 @@ class HomeViewModel : ViewModel() {
     private fun loadHome() {
         viewModelScope.launch {
             try {
-                // Top 10 trending filmova + top 10 trending serija za hero rotaciju (TMDB)
                 val trendingMovies = tmdb.trendingMovies(apiKey).results.take(10)
                 val trendingSeries = tmdb.trendingTv(apiKey).results.take(10)
 
@@ -65,10 +66,10 @@ class HomeViewModel : ViewModel() {
                 val heroSeries = trendingSeries.map { async { buildHeroItem(it.id, isMovie = false) } }
                 val heroItems = (heroMovies + heroSeries).awaitAll()
 
-                // Najpopularniji filmovi/serije - TMDB
                 val popularMovies = tmdb.popularMovies(apiKey).results.map {
                     GridItem(
                         id = it.id.toString(),
+                        type = "movie",
                         title = it.title ?: "",
                         posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p }
                     )
@@ -76,12 +77,12 @@ class HomeViewModel : ViewModel() {
                 val popularSeries = tmdb.popularTv(apiKey).results.map {
                     GridItem(
                         id = it.id.toString(),
+                        type = "tv",
                         title = it.name ?: "",
                         posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p }
                     )
                 }
 
-                // Katalozi sa tvog Stremio addon-a (žanrovski, filmovi i serije)
                 val addonCatalogs = try {
                     loadAddonCatalogs()
                 } catch (e: Exception) {
@@ -101,7 +102,6 @@ class HomeViewModel : ViewModel() {
         }
     }
 
-    // Cita manifest addon-a i sam otkriva sve njegove kataloge (zanrovi za filmove i serije)
     private suspend fun loadAddonCatalogs(): List<CatalogRow> = coroutineScope {
         val manifest = addonApi.manifest()
         val relevantCatalogs = manifest.catalogs.filter { it.type == "movie" || it.type == "series" }
@@ -116,6 +116,7 @@ class HomeViewModel : ViewModel() {
                         items = metas.map { meta ->
                             GridItem(
                                 id = meta.id,
+                                type = if (cat.type == "series") "tv" else "movie",
                                 title = meta.name ?: "",
                                 posterUrl = meta.poster
                             )
@@ -130,7 +131,6 @@ class HomeViewModel : ViewModel() {
         rows.filterNotNull()
     }
 
-    // Vuče detalje + clearlogo + uzrasnu preporuku na srpskom; ako opis fali na srpskom, dovuče engleski
     private suspend fun buildHeroItem(id: Int, isMovie: Boolean): HeroItem {
         val detail = if (isMovie) tmdb.movieDetail(id, apiKey) else tmdb.tvDetail(id, apiKey)
 
@@ -168,6 +168,7 @@ class HomeViewModel : ViewModel() {
 
         return HeroItem(
             id = id,
+            type = if (isMovie) "movie" else "tv",
             title = detail.title ?: detail.name ?: "",
             genre = detail.genres?.firstOrNull()?.name,
             ageRating = ageRating?.takeIf { it.isNotBlank() },
@@ -177,7 +178,6 @@ class HomeViewModel : ViewModel() {
         )
     }
 
-    // Menja hero naslov na svakih 5 sekundi
     private fun rotateHero() {
         viewModelScope.launch {
             while (true) {
