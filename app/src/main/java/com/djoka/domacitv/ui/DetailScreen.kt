@@ -37,6 +37,7 @@ fun DetailScreen(
     id: String,
     onBack: () -> Unit,
     onItemClick: (String, String) -> Unit,
+    onPlayClick: () -> Unit,
     viewModel: DetailViewModel = viewModel()
 ) {
     LaunchedEffect(type, id) {
@@ -108,7 +109,7 @@ fun DetailScreen(
                 ) {
                     Column(modifier = Modifier.width(220.dp)) {
                         Button(
-                            onClick = { /* TODO: plejer */ },
+                            onClick = onPlayClick,
                             colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                             shape = RoundedCornerShape(6.dp),
                             modifier = Modifier.fillMaxWidth()
