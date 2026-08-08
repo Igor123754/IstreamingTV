@@ -16,6 +16,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -57,13 +58,14 @@ fun PlayerScreen(videoUrl: String) {
         }
         val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory))
 
-        // Manji buffer pre starta = brzi pocetak i brze premotavanje (manje cekanja posle seek-a)
+        // Buffer dovoljno velik da apsorbuje varijacije brzine izvora (mp4upload/vidhide/ok.ru znaju da usporavaju)
+        // - prevelik minBuffer/premali bufferForPlayback = seckanje, sto je bio prethodni problem
         val loadControl = DefaultLoadControl.Builder()
             .setBufferDurationsMs(
-                /* minBufferMs = */ 15_000,
-                /* maxBufferMs = */ 50_000,
-                /* bufferForPlaybackMs = */ 1_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 2_000
+                /* minBufferMs = */ 30_000,
+                /* maxBufferMs = */ 90_000,
+                /* bufferForPlaybackMs = */ 3_000,
+                /* bufferForPlaybackAfterRebufferMs = */ 5_000
             )
             .build()
 
@@ -92,6 +94,15 @@ fun PlayerScreen(videoUrl: String) {
     DisposableEffect(Unit) {
         onDispose {
             exoPlayer.release()
+        }
+    }
+
+    // Ne dozvoli da se ekran zakljuca/ugasi dok je plejer otvoren
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose {
+            view.keepScreenOn = false
         }
     }
 
