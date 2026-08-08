@@ -30,6 +30,7 @@ import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import com.djoka.domacitv.data.PlaybackQueue
 import com.djoka.domacitv.data.StreamCandidate
@@ -56,9 +57,17 @@ private fun buildPlayer(
         .setBufferDurationsMs(30_000, 90_000, 3_000, 5_000)
         .build()
 
+    // Kad video ima vise audio zapisa, uvek prvo probaj engleski (ako postoji)
+    val trackSelector = DefaultTrackSelector(context).apply {
+        setParameters(
+            buildUponParameters().setPreferredAudioLanguages("eng", "en")
+        )
+    }
+
     return ExoPlayer.Builder(context)
         .setMediaSourceFactory(mediaSourceFactory)
         .setLoadControl(loadControl)
+        .setTrackSelector(trackSelector)
         .build().apply {
             setSeekParameters(SeekParameters.CLOSEST_SYNC)
             addListener(object : Player.Listener {
