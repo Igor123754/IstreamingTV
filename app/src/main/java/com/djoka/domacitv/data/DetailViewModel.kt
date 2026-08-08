@@ -170,13 +170,28 @@ class DetailViewModel : ViewModel() {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
             try {
-                val episodes = tmdb.tvSeason(id, seasonNumber, apiKey).episodes.map {
+                val srEpisodes = tmdb.tvSeason(id, seasonNumber, apiKey).episodes
+                // Ako neka epizoda nema naziv/opis na srpskom, dovucemo engleski kao rezervu
+                val needsFallback = srEpisodes.any { it.name.isNullOrBlank() || it.overview.isNullOrBlank() }
+                val enEpisodes = if (needsFallback) {
+                    try {
+                        tmdb.tvSeason(id, seasonNumber, apiKey, language = "en-US").episodes
+                    } catch (e: Exception) {
+                        emptyList()
+                    }
+                } else emptyList()
+
+                val episodes = srEpisodes.map { sr ->
+                    val en = enEpisodes.firstOrNull { it.episode_number == sr.episode_number }
                     EpisodeItem(
-                        episodeNumber = it.episode_number,
-                        name = it.name ?: "Epizoda ${it.episode_number}",
-                        overview = it.overview?.takeIf { o -> o.isNotBlank() },
-                        stillUrl = it.still_path?.let { p -> TmdbApi.STILL_URL + p },
-                        rating = it.vote_average?.takeIf { r -> r > 0 }
+                        episodeNumber = sr.episode_number,
+                        name = sr.name?.takeIf { it.isNotBlank() }
+                            ?: en?.name?.takeIf { it.isNotBlank() }
+                            ?: "Epizoda ${sr.episode_number}",
+                        overview = sr.overview?.takeIf { o -> o.isNotBlank() }
+                            ?: en?.overview?.takeIf { o -> o.isNotBlank() },
+                        stillUrl = sr.still_path?.let { p -> TmdbApi.STILL_URL + p },
+                        rating = sr.vote_average?.takeIf { r -> r > 0 }
                     )
                 }
                 _uiState.value = _uiState.value.copy(episodes = episodes)
