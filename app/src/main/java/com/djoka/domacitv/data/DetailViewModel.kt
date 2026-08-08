@@ -30,21 +30,27 @@ data class DetailUiState(
     val ageRating: String? = null,
     val overview: String? = null,
     val cast: String? = null,
-    val collectionMovies: List<GridItem> = emptyList(),   // nastavci filma
-    val seasons: List<SeasonItem> = emptyList(),          // sezone serije
+    val collectionMovies: List<GridItem> = emptyList(),
+    val seasons: List<SeasonItem> = emptyList(),
     val selectedSeason: Int? = null,
     val episodes: List<EpisodeItem> = emptyList(),
     val isLoading: Boolean = true,
-    val notFound: Boolean = false
+    val notFound: Boolean = false,
+    val isResolvingStream: Boolean = false,   // vuce link sa addon-a u pozadini
+    val streamError: String? = null,          // prikazi kratko, ne blokira ekran
+    val playbackUrl: String? = null           // kad se postavi, ekran navigira ka plejeru (jednokratni signal)
 )
 
 class DetailViewModel : ViewModel() {
 
     private val tmdb = TmdbApi.create()
     private val apiKey = TmdbApi.key()
+    private val addonApi = StremioAddonApi.create(StremioAddonApi.DOMACI_ADDON_URL)
 
     private var resolvedTmdbId: Int? = null
     private var isMovieType: Boolean = true
+    private var imdbId: String? = null
+    private var prefetchedMovieUrl: String? = null   // tiho pripremljen link za film, spreman pre klika na "Pusti"
 
     private val _uiState = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState
@@ -52,6 +58,8 @@ class DetailViewModel : ViewModel() {
     fun load(type: String, rawId: String) {
         viewModelScope.launch {
             _uiState.value = DetailUiState(isLoading = true)
+            prefetchedMovieUrl = null
+            imdbId = null
             try {
                 val isMovie = type == "movie"
                 isMovieType = isMovie
@@ -109,7 +117,6 @@ class DetailViewModel : ViewModel() {
 
                 val cast = detail.credits?.cast?.take(4)?.joinToString(", ") { it.name }
 
-                // Nastavci filma (ako pripada kolekciji)
                 val collectionMovies = if (isMovie && detail.belongs_to_collection != null) {
                     try {
                         tmdb.collection(detail.belongs_to_collection.id, apiKey).parts
@@ -127,7 +134,6 @@ class DetailViewModel : ViewModel() {
                     }
                 } else emptyList()
 
-                // Sezone serije (samo one koje imaju poster)
                 val seasons = if (!isMovie) {
                     detail.seasons
                         ?.filter { it.season_number > 0 && it.poster_path != null }
@@ -139,6 +145,10 @@ class DetailViewModel : ViewModel() {
                             )
                         } ?: emptyList()
                 } else emptyList()
+
+                // IMDB id - potreban za trazenje stream linka na addon-u (radi za oba ulazna puta:
+                // i kad je stavka dosla sa TMDB kataloga i kad je dosla sa addon kataloga)
+                imdbId = if (isMovie) detail.imdb_id else detail.external_ids?.imdb_id
 
                 _uiState.value = DetailUiState(
                     title = detail.title ?: detail.name ?: "",
@@ -155,9 +165,21 @@ class DetailViewModel : ViewModel() {
                     isLoading = false
                 )
 
-                // Automatski ucitaj epizode prve sezone sa posterom
                 if (seasons.isNotEmpty()) {
                     selectSeason(seasons.first().seasonNumber)
+                }
+
+                // Tiho, u pozadini, pripremi link za film dok korisnik jos cita opis -
+                // do trenutka klika na "Pusti" najcesce je vec spreman (pravi klik-i-gledaj)
+                if (isMovie && imdbId != null) {
+                    launch {
+                        try {
+                            prefetchedMovieUrl = addonApi.stream("movie", imdbId!!).streams
+                                .firstOrNull { !it.url.isNullOrBlank() }?.url
+                        } catch (e: Exception) {
+                            // Nista - probace ponovo na klik
+                        }
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = DetailUiState(isLoading = false, notFound = true)
@@ -171,7 +193,6 @@ class DetailViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
             try {
                 val srEpisodes = tmdb.tvSeason(id, seasonNumber, apiKey).episodes
-                // Ako neka epizoda nema naziv/opis na srpskom, dovucemo engleski kao rezervu
                 val needsFallback = srEpisodes.any { it.name.isNullOrBlank() || it.overview.isNullOrBlank() }
                 val enEpisodes = if (needsFallback) {
                     try {
@@ -199,6 +220,75 @@ class DetailViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(episodes = emptyList())
             }
         }
+    }
+
+    // Poziva se klikom na "Pusti" dugme
+    fun onPlayClicked() {
+        val imdb = imdbId
+        if (imdb == null) {
+            _uiState.value = _uiState.value.copy(streamError = "Link za ovaj naslov nije pronađen")
+            return
+        }
+
+        if (isMovieType) {
+            val cached = prefetchedMovieUrl
+            if (cached != null) {
+                _uiState.value = _uiState.value.copy(playbackUrl = cached)
+                return
+            }
+            viewModelScope.launch {
+                _uiState.value = _uiState.value.copy(isResolvingStream = true, streamError = null)
+                try {
+                    val url = addonApi.stream("movie", imdb).streams.firstOrNull { !it.url.isNullOrBlank() }?.url
+                    _uiState.value = if (url != null) {
+                        _uiState.value.copy(isResolvingStream = false, playbackUrl = url)
+                    } else {
+                        _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen")
+                    }
+                } catch (e: Exception) {
+                    _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Greška pri pretrazi linka")
+                }
+            }
+        } else {
+            val season = _uiState.value.selectedSeason ?: _uiState.value.seasons.firstOrNull()?.seasonNumber
+            if (season == null) {
+                _uiState.value = _uiState.value.copy(streamError = "Nema dostupnih sezona")
+            } else {
+                playEpisode(season, 1)
+            }
+        }
+    }
+
+    // Poziva se klikom na konkretnu epizodu u redu "Epizode"
+    fun playEpisode(seasonNumber: Int, episodeNumber: Int) {
+        val imdb = imdbId
+        if (imdb == null) {
+            _uiState.value = _uiState.value.copy(streamError = "Link za ovaj naslov nije pronađen")
+            return
+        }
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isResolvingStream = true, streamError = null)
+            try {
+                val streamId = "$imdb:$seasonNumber:$episodeNumber"
+                val url = addonApi.stream("series", streamId).streams.firstOrNull { !it.url.isNullOrBlank() }?.url
+                _uiState.value = if (url != null) {
+                    _uiState.value.copy(isResolvingStream = false, playbackUrl = url)
+                } else {
+                    _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen za ovu epizodu")
+                }
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Greška pri pretrazi linka")
+            }
+        }
+    }
+
+    // Ekran pozove ovo nakon sto je navigirao na plejer, da signal ne okine ponovo
+    fun consumePlaybackUrl() {
+        _uiState.value = _uiState.value.copy(playbackUrl = null)
+    }
+
+    fun consumeStreamError() {
+        _uiState.value = _uiState.value.copy(streamError = null)
     }
 
     private suspend fun resolveImdbId(imdbId: String, isMovie: Boolean): Int? {
