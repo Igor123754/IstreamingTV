@@ -36,7 +36,28 @@ data class StremioStreamResponse(val streams: List<StremioStream> = emptyList())
 data class StremioStream(
     val url: String? = null,
     val title: String? = null,
-    val name: String? = null
+    val name: String? = null,
+    val behaviorHints: StremioBehaviorHints? = null   // ok.ru/doodstream i sl. zahtevaju custom headers
+)
+
+data class StremioBehaviorHints(
+    val notWebReady: Boolean? = null,
+    val headers: Map<String, String>? = null
+)
+
+// --- Meta odgovor - koristimo ga za STVARNU listu sezona/epizoda koje addon ima (ne oslanjamo se na TMDB) ---
+data class StremioMetaResponse(val meta: StremioMetaDetail? = null)
+
+data class StremioMetaDetail(
+    val id: String,
+    val videos: List<StremioVideo> = emptyList()
+)
+
+data class StremioVideo(
+    val id: String,
+    val season: Int? = null,
+    val episode: Int? = null,
+    val title: String? = null
 )
 
 interface StremioAddonApi {
@@ -56,6 +77,13 @@ interface StremioAddonApi {
         @Path("type") type: String,
         @Path("id") id: String
     ): StremioStreamResponse
+
+    // Vraca stvarnu listu sezona/epizoda koje addon ima za dati naslov (serija.id = IMDB id)
+    @GET("meta/{type}/{id}.json")
+    suspend fun meta(
+        @Path("type") type: String,
+        @Path("id") id: String
+    ): StremioMetaResponse
 
     companion object {
         // Tvoj addon sa domaćim filmovima/serijama sortiranim po žanru
