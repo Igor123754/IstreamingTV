@@ -19,9 +19,6 @@ import com.djoka.domacitv.ui.DetailScreen
 import com.djoka.domacitv.ui.HomeScreen
 import com.djoka.domacitv.ui.PlayerScreen
 
-// Test video za proveru da li plejer radi - zameni kasnije stream linkom sa addon-a
-private const val TEST_VIDEO_URL = "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4"
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -62,8 +59,8 @@ fun DomaciTVApp() {
                     onItemClick = { itemType, itemId ->
                         navController.navigate("detail/$itemType/$itemId")
                     },
-                    onPlayClick = {
-                        navController.navigate("player/${Uri.encode(TEST_VIDEO_URL)}")
+                    onPlayClick = { url ->
+                        navController.navigate("player/${Uri.encode(url)}")
                     }
                 )
             }
