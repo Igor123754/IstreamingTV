@@ -35,6 +35,27 @@ data class ContentRatingsWrapper(val results: List<ContentRatingCountry> = empty
 data class TmdbCastMember(val name: String)
 data class TmdbCredits(val cast: List<TmdbCastMember> = emptyList())
 
+// --- Kolekcija (nastavci filma) ---
+data class TmdbCollectionRef(val id: Int, val name: String? = null)
+data class TmdbCollectionResponse(val parts: List<TmdbListItem> = emptyList())
+
+// --- Sezone serije ---
+data class TmdbSeason(
+    val season_number: Int,
+    val name: String? = null,
+    val poster_path: String? = null
+)
+
+// --- Epizode sezone ---
+data class TmdbEpisode(
+    val episode_number: Int,
+    val name: String? = null,
+    val overview: String? = null,
+    val still_path: String? = null,
+    val vote_average: Double? = null
+)
+data class TmdbSeasonDetail(val episodes: List<TmdbEpisode> = emptyList())
+
 data class TmdbDetail(
     val id: Int,
     val title: String? = null,
@@ -49,7 +70,9 @@ data class TmdbDetail(
     val runtime: Int? = null,                    // filmovi - trajanje u minutima
     val episode_run_time: List<Int>? = null,      // serije - trajanje epizode
     val release_date: String? = null,             // filmovi - "2023-05-31"
-    val first_air_date: String? = null            // serije
+    val first_air_date: String? = null,           // serije
+    val belongs_to_collection: TmdbCollectionRef? = null,  // filmovi - nastavci
+    val seasons: List<TmdbSeason>? = null                  // serije
 )
 
 // --- Rezultat pretrage po IMDB id-u (za stavke koje dolaze sa Stremio addon-a) ---
@@ -113,11 +136,29 @@ interface TmdbApi {
         @Query("external_source") externalSource: String = "imdb_id"
     ): TmdbFindResponse
 
+    // Svi filmovi iz iste kolekcije (nastavci)
+    @GET("collection/{id}")
+    suspend fun collection(
+        @Path("id") id: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String = "sr-RS"
+    ): TmdbCollectionResponse
+
+    // Epizode jedne sezone serije
+    @GET("tv/{id}/season/{seasonNumber}")
+    suspend fun tvSeason(
+        @Path("id") id: Int,
+        @Path("seasonNumber") seasonNumber: Int,
+        @Query("api_key") apiKey: String,
+        @Query("language") language: String = "sr-RS"
+    ): TmdbSeasonDetail
+
     companion object {
         private const val BASE_URL = "https://api.themoviedb.org/3/"
         const val BACKDROP_URL = "https://image.tmdb.org/t/p/original"
         const val POSTER_URL = "https://image.tmdb.org/t/p/w500"
         const val LOGO_URL = "https://image.tmdb.org/t/p/w500"
+        const val STILL_URL = "https://image.tmdb.org/t/p/w300"
 
         fun create(): TmdbApi {
             val retrofit = Retrofit.Builder()
