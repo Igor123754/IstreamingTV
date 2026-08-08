@@ -1,5 +1,6 @@
 package com.djoka.domacitv
 
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -8,6 +9,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -15,6 +17,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.djoka.domacitv.ui.DetailScreen
 import com.djoka.domacitv.ui.HomeScreen
+import com.djoka.domacitv.ui.PlayerScreen
+
+// Test video za proveru da li plejer radi - zameni kasnije stream linkom sa addon-a
+private const val TEST_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -25,6 +31,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@UnstableApi
 @Composable
 fun DomaciTVApp() {
     Surface(
@@ -54,8 +61,18 @@ fun DomaciTVApp() {
                     onBack = { navController.popBackStack() },
                     onItemClick = { itemType, itemId ->
                         navController.navigate("detail/$itemType/$itemId")
+                    },
+                    onPlayClick = {
+                        navController.navigate("player/${Uri.encode(TEST_VIDEO_URL)}")
                     }
                 )
+            }
+            composable(
+                route = "player/{url}",
+                arguments = listOf(navArgument("url") { type = NavType.StringType })
+            ) { backStackEntry ->
+                val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
+                PlayerScreen(videoUrl = Uri.decode(encodedUrl))
             }
         }
     }
