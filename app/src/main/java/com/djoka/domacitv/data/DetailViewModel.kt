@@ -2,6 +2,8 @@ package com.djoka.domacitv.data
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,18 +43,17 @@ data class DetailUiState(
     val playbackUrl: String? = null
 )
 
-private data class ResolvedStream(val url: String, val headers: Map<String, String>?)
-
 class DetailViewModel : ViewModel() {
 
     private val tmdb = TmdbApi.create()
     private val apiKey = TmdbApi.key()
     private val addonApi = StremioAddonApi.create(StremioAddonApi.DOMACI_ADDON_URL)
+    private val foreignAddonApi = StremioAddonApi.create(StremioAddonApi.FOREIGN_ADDON_URL)
 
     private var resolvedTmdbId: Int? = null
     private var isMovieType: Boolean = true
     private var imdbId: String? = null
-    private var prefetchedMovie: ResolvedStream? = null
+    private var prefetchedMovieCandidates: List<StreamCandidate> = emptyList()
 
     // Da li addon uopste ima ovu seriju (autoritativan spisak epizoda) ili se oslanjamo na TMDB
     private var usingAddonSeasons: Boolean = false
@@ -213,11 +214,7 @@ class DetailViewModel : ViewModel() {
                 if (isMovie && imdbId != null) {
                     launch {
                         try {
-                            val best = addonApi.stream("movie", imdbId!!).streams
-                                .firstOrNull { !it.url.isNullOrBlank() }
-                            if (best?.url != null) {
-                                prefetchedMovie = ResolvedStream(best.url, best.behaviorHints?.headers)
-                            }
+                            prefetchedMovieCandidates = fetchCandidates("movie", imdbId!!)
                         } catch (e: Exception) {
                             // Probace ponovo na klik
                         }
@@ -285,19 +282,19 @@ class DetailViewModel : ViewModel() {
         }
 
         if (isMovieType) {
-            val cached = prefetchedMovie
-            if (cached != null) {
-                PlaybackHeaders.headers = cached.headers
-                _uiState.value = _uiState.value.copy(playbackUrl = cached.url)
+            val cached = prefetchedMovieCandidates
+            if (cached.isNotEmpty()) {
+                PlaybackQueue.candidates = cached
+                _uiState.value = _uiState.value.copy(playbackUrl = cached.first().url)
                 return
             }
             viewModelScope.launch {
                 _uiState.value = _uiState.value.copy(isResolvingStream = true, streamError = null)
                 try {
-                    val best = addonApi.stream("movie", imdb).streams.firstOrNull { !it.url.isNullOrBlank() }
-                    if (best?.url != null) {
-                        PlaybackHeaders.headers = best.behaviorHints?.headers
-                        _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = best.url)
+                    val list = fetchCandidates("movie", imdb)
+                    if (list.isNotEmpty()) {
+                        PlaybackQueue.candidates = list
+                        _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                     } else {
                         _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen")
                     }
@@ -326,10 +323,10 @@ class DetailViewModel : ViewModel() {
             _uiState.value = _uiState.value.copy(isResolvingStream = true, streamError = null)
             try {
                 val streamId = "$imdb:$seasonNumber:$episodeNumber"
-                val best = addonApi.stream("series", streamId).streams.firstOrNull { !it.url.isNullOrBlank() }
-                if (best?.url != null) {
-                    PlaybackHeaders.headers = best.behaviorHints?.headers
-                    _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = best.url)
+                val list = fetchCandidates("series", streamId)
+                if (list.isNotEmpty()) {
+                    PlaybackQueue.candidates = list
+                    _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                 } else {
                     _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen za ovu epizodu")
                 }
@@ -337,6 +334,20 @@ class DetailViewModel : ViewModel() {
                 _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Greška pri pretrazi linka")
             }
         }
+    }
+
+    // Pita OBA addon-a paralelno i vraca sve validne linkove (sve mirror-e/kvalitete) kao listu -
+    // plejer ce sam redom probati dok jedan ne uspe, korisnik to ne vidi.
+    private suspend fun fetchCandidates(type: String, streamId: String): List<StreamCandidate> = coroutineScope {
+        val domestic = async {
+            try { addonApi.stream(type, streamId).streams } catch (e: Exception) { emptyList() }
+        }
+        val foreign = async {
+            try { foreignAddonApi.stream(type, streamId).streams } catch (e: Exception) { emptyList() }
+        }
+        (domestic.await() + foreign.await())
+            .filter { !it.url.isNullOrBlank() }
+            .map { StreamCandidate(it.url!!, it.behaviorHints?.headers) }
     }
 
     fun consumePlaybackUrl() {
