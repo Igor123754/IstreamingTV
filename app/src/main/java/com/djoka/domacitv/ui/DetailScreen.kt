@@ -37,7 +37,7 @@ fun DetailScreen(
     id: String,
     onBack: () -> Unit,
     onItemClick: (String, String) -> Unit,
-    onPlayClick: (String) -> Unit,
+    onPlayClick: () -> Unit,
     viewModel: DetailViewModel = viewModel()
 ) {
     LaunchedEffect(type, id) {
@@ -46,11 +46,11 @@ fun DetailScreen(
 
     val state by viewModel.uiState.collectAsState()
 
-    // Kad je link pronadjen (bilo da je vec bio spreman ili se resio na klik), navigiraj ka plejeru
+    // Kad je red kandidata spreman (bilo da je vec bio pripremljen ili se resio na klik), navigiraj ka plejeru
     LaunchedEffect(state.playbackUrl) {
         val url = state.playbackUrl
         if (url != null) {
-            onPlayClick(url)
+            onPlayClick()
             viewModel.consumePlaybackUrl()
         }
     }
