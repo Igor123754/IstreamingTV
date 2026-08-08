@@ -31,6 +31,10 @@ data class ReleaseDatesWrapper(val results: List<ReleaseDatesCountry> = emptyLis
 data class ContentRatingCountry(val iso_3166_1: String, val rating: String? = null)
 data class ContentRatingsWrapper(val results: List<ContentRatingCountry> = emptyList())
 
+// --- Glumci (za stranicu sa detaljima) ---
+data class TmdbCastMember(val name: String)
+data class TmdbCredits(val cast: List<TmdbCastMember> = emptyList())
+
 data class TmdbDetail(
     val id: Int,
     val title: String? = null,
@@ -40,7 +44,18 @@ data class TmdbDetail(
     val genres: List<TmdbGenre>? = null,
     val images: TmdbImages? = null,
     val release_dates: ReleaseDatesWrapper? = null,
-    val content_ratings: ContentRatingsWrapper? = null
+    val content_ratings: ContentRatingsWrapper? = null,
+    val credits: TmdbCredits? = null,
+    val runtime: Int? = null,                    // filmovi - trajanje u minutima
+    val episode_run_time: List<Int>? = null,      // serije - trajanje epizode
+    val release_date: String? = null,             // filmovi - "2023-05-31"
+    val first_air_date: String? = null            // serije
+)
+
+// --- Rezultat pretrage po IMDB id-u (za stavke koje dolaze sa Stremio addon-a) ---
+data class TmdbFindResponse(
+    val movie_results: List<TmdbListItem> = emptyList(),
+    val tv_results: List<TmdbListItem> = emptyList()
 )
 
 interface TmdbApi {
@@ -71,13 +86,13 @@ interface TmdbApi {
         @Query("page") page: Int = 1
     ): TmdbListResponse
 
-    // append_to_response vraća clearlogo i uzrasnu preporuku u istom pozivu
+    // append_to_response vraća clearlogo, uzrasnu preporuku i glumce u istom pozivu
     @GET("movie/{id}")
     suspend fun movieDetail(
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "sr-RS",
-        @Query("append_to_response") append: String = "images,release_dates",
+        @Query("append_to_response") append: String = "images,release_dates,credits",
         @Query("include_image_language") includeImageLanguage: String = "sr,en,null"
     ): TmdbDetail
 
@@ -86,9 +101,17 @@ interface TmdbApi {
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
         @Query("language") language: String = "sr-RS",
-        @Query("append_to_response") append: String = "images,content_ratings",
+        @Query("append_to_response") append: String = "images,content_ratings,credits",
         @Query("include_image_language") includeImageLanguage: String = "sr,en,null"
     ): TmdbDetail
+
+    // Za stavke sa Stremio addon-a koje imaju IMDB id (npr. "tt1234567") umesto TMDB id-a
+    @GET("find/{externalId}")
+    suspend fun findByImdbId(
+        @Path("externalId") imdbId: String,
+        @Query("api_key") apiKey: String,
+        @Query("external_source") externalSource: String = "imdb_id"
+    ): TmdbFindResponse
 
     companion object {
         private const val BASE_URL = "https://api.themoviedb.org/3/"
