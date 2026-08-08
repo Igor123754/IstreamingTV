@@ -34,7 +34,7 @@ import com.djoka.domacitv.data.HeroItem
 import com.djoka.domacitv.data.HomeViewModel
 
 @Composable
-fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
+fun HomeScreen(onItemClick: (String, String) -> Unit, viewModel: HomeViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsState()
     val currentHero = state.heroItems.getOrNull(state.heroIndex)
 
@@ -60,29 +60,29 @@ fun HomeScreen(viewModel: HomeViewModel = viewModel()) {
     ) {
         // Hero banner - fanart, normalne visine
         Box(modifier = Modifier.fillMaxWidth().height(620.dp)) {
-            currentHero?.let { HeroSection(it, playButtonFocusRequester) }
+            currentHero?.let { HeroSection(it, playButtonFocusRequester, onItemClick) }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
 
         if (state.popularMovies.isNotEmpty()) {
-            CatalogRowSection(title = "Najpopularniji filmovi", items = state.popularMovies)
+            CatalogRowSection(title = "Najpopularniji filmovi", items = state.popularMovies, onItemClick = onItemClick)
             Spacer(modifier = Modifier.height(32.dp))
         }
         if (state.popularSeries.isNotEmpty()) {
-            CatalogRowSection(title = "Najpopularnije serije", items = state.popularSeries)
+            CatalogRowSection(title = "Najpopularnije serije", items = state.popularSeries, onItemClick = onItemClick)
             Spacer(modifier = Modifier.height(32.dp))
         }
 
         state.addonCatalogs.forEach { row ->
-            CatalogRowSection(title = row.title, items = row.items)
+            CatalogRowSection(title = row.title, items = row.items, onItemClick = onItemClick)
             Spacer(modifier = Modifier.height(32.dp))
         }
     }
 }
 
 @Composable
-private fun HeroSection(item: HeroItem, playButtonFocusRequester: FocusRequester) {
+private fun HeroSection(item: HeroItem, playButtonFocusRequester: FocusRequester, onItemClick: (String, String) -> Unit) {
     Box(modifier = Modifier.fillMaxSize()) {
         AsyncImage(
             model = item.backdropUrl,
@@ -157,7 +157,7 @@ private fun HeroSection(item: HeroItem, playButtonFocusRequester: FocusRequester
 
             var isFocused by remember { mutableStateOf(false) }
             Button(
-                onClick = { /* TODO: detalji + izbor stream-a */ },
+                onClick = { onItemClick(item.type, item.id.toString()) },
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier
@@ -176,7 +176,7 @@ private fun HeroSection(item: HeroItem, playButtonFocusRequester: FocusRequester
 }
 
 @Composable
-private fun CatalogRowSection(title: String, items: List<GridItem>) {
+private fun CatalogRowSection(title: String, items: List<GridItem>, onItemClick: (String, String) -> Unit) {
     Column(modifier = Modifier.padding(start = 48.dp)) {
         Text(text = title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
@@ -184,20 +184,20 @@ private fun CatalogRowSection(title: String, items: List<GridItem>) {
             horizontalArrangement = Arrangement.spacedBy(16.dp),
             contentPadding = PaddingValues(end = 48.dp)
         ) {
-            items(items) { meta -> PosterCard(meta) }
+            items(items) { meta -> PosterCard(meta, onItemClick) }
         }
     }
 }
 
 @Composable
-private fun PosterCard(item: GridItem) {
+private fun PosterCard(item: GridItem, onItemClick: (String, String) -> Unit) {
     var isFocused by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .width(140.dp)
             .focusable()
-            .clickable { /* TODO: otvori detalje naslova */ }
+            .clickable { onItemClick(item.type, item.id) }
             .onFocusChanged { isFocused = it.isFocused }
             .scale(if (isFocused) 1.08f else 1f)
     ) {
