@@ -8,6 +8,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -30,74 +31,100 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
-import com.djoka.domacitv.data.PlaybackHeaders
+import com.djoka.domacitv.data.PlaybackQueue
+import com.djoka.domacitv.data.StreamCandidate
 
 private const val BROWSER_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 @UnstableApi
+private fun buildPlayer(
+    context: android.content.Context,
+    candidate: StreamCandidate,
+    onError: () -> Unit
+): ExoPlayer {
+    val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
+        setUserAgent(candidate.headers?.get("User-Agent") ?: candidate.headers?.get("user-agent") ?: BROWSER_USER_AGENT)
+        if (!candidate.headers.isNullOrEmpty()) {
+            setDefaultRequestProperties(candidate.headers)
+        }
+        setAllowCrossProtocolRedirects(true)
+    }
+    val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory))
+
+    val loadControl = DefaultLoadControl.Builder()
+        .setBufferDurationsMs(30_000, 90_000, 3_000, 5_000)
+        .build()
+
+    return ExoPlayer.Builder(context)
+        .setMediaSourceFactory(mediaSourceFactory)
+        .setLoadControl(loadControl)
+        .build().apply {
+            setSeekParameters(SeekParameters.CLOSEST_SYNC)
+            addListener(object : Player.Listener {
+                override fun onPlayerError(error: PlaybackException) {
+                    // Ne prikazuj gresku korisniku - tiho probaj sledeci link u pozadini
+                    onError()
+                }
+            })
+            setMediaItem(MediaItem.fromUri(candidate.url))
+            prepare()
+            playWhenReady = true
+        }
+}
+
+@UnstableApi
 @Composable
-fun PlayerScreen(videoUrl: String) {
+fun PlayerScreen() {
     val context = LocalContext.current
 
+    // Pokupi sve kandidate jednom, "potrosi" red - ne ostaje za sledece pustanje
+    val candidates = remember {
+        val list = PlaybackQueue.candidates
+        PlaybackQueue.candidates = emptyList()
+        list
+    }
+
+    var currentIndex by remember { mutableStateOf(0) }
+    var player by remember { mutableStateOf<ExoPlayer?>(null) }
     var isBuffering by remember { mutableStateOf(true) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var allFailed by remember { mutableStateOf(false) }
 
-    val exoPlayer = remember {
-        // Headers koje je addon vratio za ovaj konkretan link (ok.ru, doodstream i sl. ih zahtevaju).
-        // "Potrosimo" ih odmah da se ne bi slucajno iskoristile za sledeci, drugaciji video.
-        val customHeaders = PlaybackHeaders.headers
-        PlaybackHeaders.headers = null
-
-        val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
-            setUserAgent(customHeaders?.get("User-Agent") ?: customHeaders?.get("user-agent") ?: BROWSER_USER_AGENT)
-            if (!customHeaders.isNullOrEmpty()) {
-                setDefaultRequestProperties(customHeaders)
-            }
-            setAllowCrossProtocolRedirects(true)
+    LaunchedEffect(currentIndex) {
+        if (candidates.isEmpty()) {
+            allFailed = true
+            return@LaunchedEffect
         }
-        val mediaSourceFactory = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, httpDataSourceFactory))
+        if (currentIndex >= candidates.size) {
+            allFailed = true
+            player?.release()
+            player = null
+            return@LaunchedEffect
+        }
+        isBuffering = true
+        player?.release()
+        player = buildPlayer(context, candidates[currentIndex]) {
+            // Ovaj link ne radi - tiho predji na sledeci, u pozadini
+            currentIndex += 1
+        }
+    }
 
-        // Buffer dovoljno velik da apsorbuje varijacije brzine izvora (mp4upload/vidhide/ok.ru znaju da usporavaju)
-        // - prevelik minBuffer/premali bufferForPlayback = seckanje, sto je bio prethodni problem
-        val loadControl = DefaultLoadControl.Builder()
-            .setBufferDurationsMs(
-                /* minBufferMs = */ 30_000,
-                /* maxBufferMs = */ 90_000,
-                /* bufferForPlaybackMs = */ 3_000,
-                /* bufferForPlaybackAfterRebufferMs = */ 5_000
-            )
-            .build()
-
-        ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setLoadControl(loadControl)
-            .build().apply {
-                // Priblizan (brzi) seek umesto tacnog frame-a - premotavanje deluje skoro trenutno
-                setSeekParameters(SeekParameters.CLOSEST_SYNC)
-
-                addListener(object : Player.Listener {
-                    override fun onPlaybackStateChanged(state: Int) {
-                        isBuffering = state == Player.STATE_BUFFERING
-                    }
-
-                    override fun onPlayerError(error: PlaybackException) {
-                        errorMessage = "${error.errorCodeName}: ${error.message}"
-                    }
-                })
-                setMediaItem(MediaItem.fromUri(videoUrl))
-                prepare()
-                playWhenReady = true
+    // Prati stanje aktivnog plejera (buffering indikator)
+    LaunchedEffect(player) {
+        val p = player ?: return@LaunchedEffect
+        p.addListener(object : Player.Listener {
+            override fun onPlaybackStateChanged(state: Int) {
+                isBuffering = state == Player.STATE_BUFFERING
             }
+        })
     }
 
     DisposableEffect(Unit) {
         onDispose {
-            exoPlayer.release()
+            player?.release()
         }
     }
 
-    // Ne dozvoli da se ekran zakljuca/ugasi dok je plejer otvoren
     val view = LocalView.current
     DisposableEffect(Unit) {
         view.keepScreenOn = true
@@ -107,31 +134,30 @@ fun PlayerScreen(videoUrl: String) {
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
-        if (videoUrl.isBlank()) {
-            Text(text = "Nema video linka", color = Color.White, modifier = Modifier.align(Alignment.Center))
-            return@Box
-        }
-
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exoPlayer
-                    useController = true
-                }
-            },
-            modifier = Modifier.fillMaxSize()
-        )
-
-        if (isBuffering && errorMessage == null) {
-            CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
-        }
-
-        errorMessage?.let { msg ->
+        if (allFailed) {
             Text(
-                text = "Greška pri puštanju:\n$msg",
+                text = "Nijedan link trenutno ne radi za ovaj naslov.\nPokušaj ponovo malo kasnije.",
                 color = Color.White,
                 modifier = Modifier.align(Alignment.Center).padding(24.dp)
             )
+            return@Box
+        }
+
+        player?.let { p ->
+            AndroidView(
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = true
+                        this.player = p
+                    }
+                },
+                update = { it.player = p },
+                modifier = Modifier.fillMaxSize()
+            )
+        }
+
+        if (isBuffering) {
+            CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
         }
     }
 }
