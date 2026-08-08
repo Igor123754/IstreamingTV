@@ -66,7 +66,7 @@ class DetailViewModel : ViewModel() {
     fun load(type: String, rawId: String) {
         viewModelScope.launch {
             _uiState.value = DetailUiState(isLoading = true)
-            prefetchedMovie = null
+            prefetchedMovieCandidates = emptyList()
             imdbId = null
             usingAddonSeasons = false
             addonVideosBySeason = emptyMap()
