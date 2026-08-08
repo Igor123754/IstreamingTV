@@ -20,7 +20,7 @@ import com.djoka.domacitv.ui.HomeScreen
 import com.djoka.domacitv.ui.PlayerScreen
 
 // Test video za proveru da li plejer radi - zameni kasnije stream linkom sa addon-a
-private const val TEST_VIDEO_URL = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4"
+private const val TEST_VIDEO_URL = "https://storage.googleapis.com/exoplayer-test-media-0/BigBuckBunny_320x180.mp4"
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
