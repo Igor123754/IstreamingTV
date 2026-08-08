@@ -1,6 +1,5 @@
 package com.djoka.domacitv
 
-import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -59,17 +58,13 @@ fun DomaciTVApp() {
                     onItemClick = { itemType, itemId ->
                         navController.navigate("detail/$itemType/$itemId")
                     },
-                    onPlayClick = { url ->
-                        navController.navigate("player/${Uri.encode(url)}")
+                    onPlayClick = {
+                        navController.navigate("player")
                     }
                 )
             }
-            composable(
-                route = "player/{url}",
-                arguments = listOf(navArgument("url") { type = NavType.StringType })
-            ) { backStackEntry ->
-                val encodedUrl = backStackEntry.arguments?.getString("url") ?: ""
-                PlayerScreen(videoUrl = Uri.decode(encodedUrl))
+            composable("player") {
+                PlayerScreen()
             }
         }
     }
