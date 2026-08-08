@@ -54,7 +54,8 @@ class DetailViewModel : ViewModel() {
     private var imdbId: String? = null
     private var prefetchedMovie: ResolvedStream? = null
 
-    // Prava lista sezona/epizoda koje addon ima za ovaj naslov (autoritativna - ne TMDB pretpostavka)
+    // Da li addon uopste ima ovu seriju (autoritativan spisak epizoda) ili se oslanjamo na TMDB
+    private var usingAddonSeasons: Boolean = false
     private var addonVideosBySeason: Map<Int, List<StremioVideo>> = emptyMap()
     private var fallbackPosterUrl: String? = null
 
@@ -66,6 +67,7 @@ class DetailViewModel : ViewModel() {
             _uiState.value = DetailUiState(isLoading = true)
             prefetchedMovie = null
             imdbId = null
+            usingAddonSeasons = false
             addonVideosBySeason = emptyMap()
             try {
                 val isMovie = type == "movie"
@@ -146,27 +148,46 @@ class DetailViewModel : ViewModel() {
 
                 var seasons: List<SeasonItem> = emptyList()
 
-                if (!isMovie && imdbId != null) {
-                    // Sezone/epizode uzimamo sa addon-a (on tacno zna sta ima) - TMDB koristimo
-                    // samo da ulepsamo naziv/opis/sliku epizode ako postoji.
-                    try {
-                        val addonVideos = addonApi.meta("series", imdbId!!).meta?.videos.orEmpty()
-                        addonVideosBySeason = addonVideos
-                            .filter { it.season != null && it.episode != null }
-                            .groupBy { it.season!! }
+                if (!isMovie) {
+                    // 1) Prvo probaj addon - ako ga ima, on je autoritativan (zna tacno sta je playable)
+                    if (imdbId != null) {
+                        try {
+                            val addonVideos = addonApi.meta("series", imdbId!!).meta?.videos.orEmpty()
+                            val bySeasonAddon = addonVideos
+                                .filter { it.season != null && it.episode != null }
+                                .groupBy { it.season!! }
 
-                        seasons = addonVideosBySeason.keys.sorted().map { seasonNum ->
-                            val tmdbPoster = detail.seasons
-                                ?.firstOrNull { it.season_number == seasonNum }
-                                ?.poster_path
-                            SeasonItem(
-                                seasonNumber = seasonNum,
-                                name = "Sezona $seasonNum",
-                                posterUrl = tmdbPoster?.let { TmdbApi.POSTER_URL + it } ?: fallbackPosterUrl
-                            )
+                            if (bySeasonAddon.isNotEmpty()) {
+                                addonVideosBySeason = bySeasonAddon
+                                usingAddonSeasons = true
+                                seasons = bySeasonAddon.keys.sorted().map { seasonNum ->
+                                    val tmdbPoster = detail.seasons
+                                        ?.firstOrNull { it.season_number == seasonNum }
+                                        ?.poster_path
+                                    SeasonItem(
+                                        seasonNumber = seasonNum,
+                                        name = "Sezona $seasonNum",
+                                        posterUrl = tmdbPoster?.let { TmdbApi.POSTER_URL + it } ?: fallbackPosterUrl
+                                    )
+                                }
+                            }
+                        } catch (e: Exception) {
+                            // Nastavljamo na TMDB fallback ispod
                         }
-                    } catch (e: Exception) {
-                        seasons = emptyList()
+                    }
+
+                    // 2) Addon nema ovu seriju (ili poziv nije uspeo) - prikazi je i dalje preko TMDB podataka
+                    if (seasons.isEmpty()) {
+                        usingAddonSeasons = false
+                        seasons = detail.seasons
+                            ?.filter { it.season_number > 0 }
+                            ?.map {
+                                SeasonItem(
+                                    seasonNumber = it.season_number,
+                                    name = it.name ?: "Sezona ${it.season_number}",
+                                    posterUrl = it.poster_path?.let { p -> TmdbApi.POSTER_URL + p } ?: fallbackPosterUrl
+                                )
+                            } ?: emptyList()
                     }
                 }
 
@@ -208,24 +229,15 @@ class DetailViewModel : ViewModel() {
         }
     }
 
-    // Epizode odabrane sezone - lista epizoda dolazi sa addon-a (autoritativno), TMDB samo ulepsava prikaz
+    // Epizode odabrane sezone. Ako addon ima seriju - lista dolazi od njega (autoritativno).
+    // Ako nema - koristi se cela TMDB lista epizoda (samo za pregled, "Pusti" nece naci link).
     fun selectSeason(seasonNumber: Int) {
         val tmdbId = resolvedTmdbId
-        val addonEpisodeNumbers = addonVideosBySeason[seasonNumber]
-            ?.mapNotNull { it.episode }
-            ?.sorted()
-            ?: emptyList()
-
-        if (addonEpisodeNumbers.isEmpty()) {
-            _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber, episodes = emptyList())
-            return
-        }
+        _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
 
         viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(selectedSeason = seasonNumber)
-
-            var tmdbEpisodes: List<com.djoka.domacitv.data.TmdbEpisode> = emptyList()
-            var tmdbEpisodesEn: List<com.djoka.domacitv.data.TmdbEpisode> = emptyList()
+            var tmdbEpisodes: List<TmdbEpisode> = emptyList()
+            var tmdbEpisodesEn: List<TmdbEpisode> = emptyList()
             if (tmdbId != null) {
                 try {
                     tmdbEpisodes = tmdb.tvSeason(tmdbId, seasonNumber, apiKey).episodes
@@ -237,11 +249,17 @@ class DetailViewModel : ViewModel() {
                         }
                     }
                 } catch (e: Exception) {
-                    // Nema TMDB podataka za ovu sezonu - i dalje prikazujemo epizode sa osnovnim nazivom
+                    // Nema TMDB podataka za ovu sezonu
                 }
             }
 
-            val episodes = addonEpisodeNumbers.map { epNum ->
+            val episodeNumbers = if (usingAddonSeasons) {
+                addonVideosBySeason[seasonNumber]?.mapNotNull { it.episode }?.sorted() ?: emptyList()
+            } else {
+                tmdbEpisodes.map { it.episode_number }.sorted()
+            }
+
+            val episodes = episodeNumbers.map { epNum ->
                 val sr = tmdbEpisodes.firstOrNull { it.episode_number == epNum }
                 val en = tmdbEpisodesEn.firstOrNull { it.episode_number == epNum }
                 EpisodeItem(
@@ -289,7 +307,7 @@ class DetailViewModel : ViewModel() {
             }
         } else {
             val season = _uiState.value.selectedSeason ?: _uiState.value.seasons.firstOrNull()?.seasonNumber
-            val firstEpisode = season?.let { addonVideosBySeason[it]?.mapNotNull { v -> v.episode }?.minOrNull() }
+            val firstEpisode = _uiState.value.episodes.firstOrNull()?.episodeNumber
             if (season == null || firstEpisode == null) {
                 _uiState.value = _uiState.value.copy(streamError = "Nema dostupnih epizoda")
             } else {
