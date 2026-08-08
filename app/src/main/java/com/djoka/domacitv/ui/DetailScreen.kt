@@ -37,7 +37,7 @@ fun DetailScreen(
     id: String,
     onBack: () -> Unit,
     onItemClick: (String, String) -> Unit,
-    onPlayClick: () -> Unit,
+    onPlayClick: (String) -> Unit,
     viewModel: DetailViewModel = viewModel()
 ) {
     LaunchedEffect(type, id) {
@@ -45,6 +45,15 @@ fun DetailScreen(
     }
 
     val state by viewModel.uiState.collectAsState()
+
+    // Kad je link pronadjen (bilo da je vec bio spreman ili se resio na klik), navigiraj ka plejeru
+    LaunchedEffect(state.playbackUrl) {
+        val url = state.playbackUrl
+        if (url != null) {
+            onPlayClick(url)
+            viewModel.consumePlaybackUrl()
+        }
+    }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (state.isLoading) {
@@ -109,12 +118,21 @@ fun DetailScreen(
                 ) {
                     Column(modifier = Modifier.width(220.dp)) {
                         Button(
-                            onClick = onPlayClick,
+                            onClick = { viewModel.onPlayClicked() },
+                            enabled = !state.isResolvingStream,
                             colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                             shape = RoundedCornerShape(6.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("▶  Pusti", fontWeight = FontWeight.SemiBold)
+                            if (state.isResolvingStream) {
+                                CircularProgressIndicator(color = Color.Black, strokeWidth = 2.dp, modifier = Modifier.size(16.dp))
+                            } else {
+                                Text("▶  Pusti", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                        state.streamError?.let { err ->
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(text = err, color = Color.Red.copy(alpha = 0.85f), fontSize = 11.sp)
                         }
                         Spacer(modifier = Modifier.height(10.dp))
                         OutlinedButton(
@@ -193,9 +211,23 @@ fun DetailScreen(
             }
 
             // Epizode odabrane sezone
-            if (state.episodes.isNotEmpty()) {
-                EpisodeRowSection(episodes = state.episodes)
+            if (state.episodes.isNotEmpty() && state.selectedSeason != null) {
+                EpisodeRowSection(
+                    episodes = state.episodes,
+                    seasonNumber = state.selectedSeason!!,
+                    onEpisodeClick = { season, episode -> viewModel.playEpisode(season, episode) }
+                )
                 Spacer(modifier = Modifier.height(32.dp))
+            }
+        }
+
+        // Overlay preko celog ekrana dok se link resava (samo ako prefetch jos nije gotov)
+        if (state.isResolvingStream) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White)
             }
         }
     }
@@ -290,7 +322,7 @@ private fun SeasonRowSection(
 }
 
 @Composable
-private fun EpisodeRowSection(episodes: List<EpisodeItem>) {
+private fun EpisodeRowSection(episodes: List<EpisodeItem>, seasonNumber: Int, onEpisodeClick: (Int, Int) -> Unit) {
     Column(modifier = Modifier.padding(start = 48.dp)) {
         Text(text = "Epizode", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         Spacer(modifier = Modifier.height(12.dp))
@@ -304,7 +336,7 @@ private fun EpisodeRowSection(episodes: List<EpisodeItem>) {
                     modifier = Modifier
                         .width(260.dp)
                         .focusable()
-                        .clickable { /* TODO: pusti epizodu kad dodamo plejer */ }
+                        .clickable { onEpisodeClick(seasonNumber, ep.episodeNumber) }
                         .onFocusChanged { isFocused = it.isFocused }
                         .scale(if (isFocused) 1.04f else 1f)
                 ) {
