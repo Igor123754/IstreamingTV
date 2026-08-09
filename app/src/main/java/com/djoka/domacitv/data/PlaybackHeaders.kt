@@ -6,11 +6,16 @@ data class StreamCandidate(
     val headers: Map<String, String>? = null
 )
 
-// Cela lista kandidata (svi mirror-i sa oba addon-a) - Navigation Compose ne prenosi lako liste kroz
-// rutu, pa je ostavljamo ovde tik pre navigacije ka plejeru. Plejer je pokupi jednom i "potrosi" je -
-// on sam prelazi na sledeci kandidat ako trenutni ne uspe da se pusti, bez ikakvog pitanja korisniku.
+// Jedan ponudjeni titl - moze ih biti vise za isti naslov (razliciti upload-i), korisnik bira u plejeru
+data class SubtitleTrackInfo(
+    val url: String,
+    val label: String
+)
+
+// Cela lista kandidata (svi mirror-i sa oba addon-a) i titlova - Navigation Compose ne prenosi lako
+// liste kroz rutu, pa ih ostavljamo ovde tik pre navigacije ka plejeru. Plejer ih pokupi jednom i
+// "potrosi" red - on sam prelazi na sledeci kandidat ako trenutni ne uspe da se pusti.
 object PlaybackQueue {
     var candidates: List<StreamCandidate> = emptyList()
-    var subtitleUrl: String? = null   // srpski ako postoji, inace engleski
-    var subtitleLabel: String? = null // "Srpski" ili "English", za prikaz u meniju titlova
+    var subtitles: List<SubtitleTrackInfo> = emptyList()
 }
