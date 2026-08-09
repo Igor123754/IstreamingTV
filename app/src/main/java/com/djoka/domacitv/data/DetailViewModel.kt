@@ -216,13 +216,13 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                 if (isMovie && imdbId != null) {
                     launch {
                         try {
-                            prefetchedMovieCandidates = fetchCandidates("movie", imdbId!!)
+                            val list = fetchCandidates("movie", imdbId!!)
+                            prefetchedMovieCandidates = list
+                            val best = list.firstOrNull()
+                            fetchSubtitle("movie", imdbId!!, best?.url, best?.headers)
                         } catch (e: Exception) {
                             // Probace ponovo na klik
                         }
-                    }
-                    launch {
-                        fetchSubtitle("movie", imdbId!!)
                     }
                 }
             } catch (e: Exception) {
@@ -299,7 +299,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                     val list = fetchCandidates("movie", imdb)
                     if (list.isNotEmpty()) {
                         PlaybackQueue.candidates = list
-                        launch { fetchSubtitle("movie", imdb) }
+                    launch { fetchSubtitle("movie", imdb, list.first().url, list.first().headers) }
                         _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                     } else {
                         _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen")
@@ -332,7 +332,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                 val list = fetchCandidates("series", streamId)
                 if (list.isNotEmpty()) {
                     PlaybackQueue.candidates = list
-                    launch { fetchSubtitle("series", streamId) }
+                    launch { fetchSubtitle("series", streamId, list.first().url, list.first().headers) }
                     _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                 } else {
                     _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen za ovu epizodu")
@@ -357,41 +357,57 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             .map { StreamCandidate(it.url!!, it.behaviorHints?.headers) }
     }
 
-    // Srpski ako postoji, inace engleski. Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
-    // Ako je srpski i imamo Gemini kljuc, u pozadini pokusavamo AI ispravku prevoda (nikad ne dira tajminge).
-    private suspend fun fetchSubtitle(type: String, streamId: String) {
+    // Srpski ako postoji, inace engleski. Prvo probamo hash-match (garantovano sinhronizovan sa
+    // OVIM tacnim fajlom); ako addon nema hash-match rezultat, padamo nazad na obican lookup po naslovu.
+    // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
+    private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
-            val subs = subtitleApi.subtitles(type, streamId).subtitles
-            val serbian = subs.firstOrNull {
+            var subs = emptyList<SubtitleItem>()
+
+            if (streamUrl != null) {
+                val hash = VideoHasher.compute(streamUrl, streamHeaders)
+                if (hash != null) {
+                    try {
+                        val extra = "videoSize=${hash.fileSize}&videoHash=${hash.hashHex}"
+                        subs = subtitleApi.subtitlesWithHash(type, streamId, extra).subtitles
+                    } catch (e: Exception) {
+                        // Nastavljamo na obican lookup ispod
+                    }
+                }
+            }
+
+            if (subs.isEmpty()) {
+                subs = subtitleApi.subtitles(type, streamId).subtitles
+            }
+
+            val serbianList = subs.filter {
                 val l = it.lang.lowercase()
                 l == "srp" || l == "scc" || l == "ser" || l.startsWith("sr")
-            }
+            }.take(2)
             val english = subs.firstOrNull { it.lang.lowercase().startsWith("en") }
-            val chosen = serbian ?: english
 
-            if (chosen == null) {
-                PlaybackQueue.subtitleUrl = null
-                PlaybackQueue.subtitleLabel = null
-                return
-            }
+            val tracks = mutableListOf<SubtitleTrackInfo>()
 
-            var finalUrl = chosen.url
-            var label = if (chosen == serbian) "Srpski" else "English"
-
-            if (chosen == serbian) {
+            if (serbianList.isNotEmpty()) {
+                val primary = serbianList.first()
                 val corrected = try {
-                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), chosen.url)
+                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), primary.url)
                 } catch (e: Exception) {
                     null
                 }
-                if (corrected != null) {
-                    finalUrl = corrected
-                    label = "Srpski (AI ispravljen)"
+                tracks.add(
+                    SubtitleTrackInfo(
+                        url = corrected ?: primary.url,
+                        label = if (corrected != null) "Srpski (AI ispravljen)" else "Srpski"
+                    )
+                )
+                serbianList.drop(1).forEachIndexed { i, extra ->
+                    tracks.add(SubtitleTrackInfo(url = extra.url, label = "Srpski (alt ${i + 2})"))
                 }
             }
+            english?.let { tracks.add(SubtitleTrackInfo(url = it.url, label = "English")) }
 
-            PlaybackQueue.subtitleUrl = finalUrl
-            PlaybackQueue.subtitleLabel = label
+            PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
             // Nema titla - nije kriticno, video ide bez njega
         }
