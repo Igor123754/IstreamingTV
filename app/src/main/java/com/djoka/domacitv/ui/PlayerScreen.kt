@@ -79,7 +79,7 @@ private fun buildPlayer(
         }
         val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUrl))
             .setMimeType(mimeType)
-            .setLanguage(if (subtitleLabel == "Srpski") "sr" else "en")
+            .setLanguage(if (subtitleLabel?.startsWith("Srpski") == true) "sr" else "en")
             .setLabel(subtitleLabel ?: "Titl")
             .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
             .build()
