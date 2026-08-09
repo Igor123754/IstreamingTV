@@ -49,6 +49,7 @@ class DetailViewModel : ViewModel() {
     private val apiKey = TmdbApi.key()
     private val addonApi = StremioAddonApi.create(StremioAddonApi.DOMACI_ADDON_URL)
     private val foreignAddonApi = StremioAddonApi.create(StremioAddonApi.FOREIGN_ADDON_URL)
+    private val subtitleApi = SubtitleAddonApi.create(SubtitleAddonApi.OPENSUBTITLES_URL)
 
     private var resolvedTmdbId: Int? = null
     private var isMovieType: Boolean = true
@@ -219,6 +220,9 @@ class DetailViewModel : ViewModel() {
                             // Probace ponovo na klik
                         }
                     }
+                    launch {
+                        fetchSubtitle("movie", imdbId!!)
+                    }
                 }
             } catch (e: Exception) {
                 _uiState.value = DetailUiState(isLoading = false, notFound = true)
@@ -294,6 +298,7 @@ class DetailViewModel : ViewModel() {
                     val list = fetchCandidates("movie", imdb)
                     if (list.isNotEmpty()) {
                         PlaybackQueue.candidates = list
+                        launch { fetchSubtitle("movie", imdb) }
                         _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                     } else {
                         _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen")
@@ -326,6 +331,7 @@ class DetailViewModel : ViewModel() {
                 val list = fetchCandidates("series", streamId)
                 if (list.isNotEmpty()) {
                     PlaybackQueue.candidates = list
+                    launch { fetchSubtitle("series", streamId) }
                     _uiState.value = _uiState.value.copy(isResolvingStream = false, playbackUrl = list.first().url)
                 } else {
                     _uiState.value = _uiState.value.copy(isResolvingStream = false, streamError = "Link nije pronađen za ovu epizodu")
@@ -348,6 +354,28 @@ class DetailViewModel : ViewModel() {
         (domestic.await() + foreign.await())
             .filter { !it.url.isNullOrBlank() }
             .map { StreamCandidate(it.url!!, it.behaviorHints?.headers) }
+    }
+
+    // Srpski ako postoji, inace engleski. Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
+    private suspend fun fetchSubtitle(type: String, streamId: String) {
+        try {
+            val subs = subtitleApi.subtitles(type, streamId).subtitles
+            val serbian = subs.firstOrNull {
+                val l = it.lang.lowercase()
+                l == "srp" || l == "scc" || l == "ser" || l.startsWith("sr")
+            }
+            val english = subs.firstOrNull { it.lang.lowercase().startsWith("en") }
+            val chosen = serbian ?: english
+
+            PlaybackQueue.subtitleUrl = chosen?.url
+            PlaybackQueue.subtitleLabel = when {
+                chosen == null -> null
+                chosen == serbian -> "Srpski"
+                else -> "English"
+            }
+        } catch (e: Exception) {
+            // Nema titla - nije kriticno, video ide bez njega
+        }
     }
 
     fun consumePlaybackUrl() {
