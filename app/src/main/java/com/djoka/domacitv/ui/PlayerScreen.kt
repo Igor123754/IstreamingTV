@@ -192,6 +192,7 @@ fun PlayerScreen() {
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         useController = true
+                        setShowSubtitleButton(true)
                         this.player = p
                     }
                 },
