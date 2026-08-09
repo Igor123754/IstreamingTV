@@ -15,11 +15,21 @@ data class SubtitleItem(
 
 interface SubtitleAddonApi {
 
-    // id je isti format kao za stream: IMDB id za film, "tt.../sezona/epizoda" za seriju
+    // id je isti format kao za stream: IMDB id za film, "tt.../sezona/epizoda" za seriju.
+    // Bez "extra" - obican lookup po naslovu (moze da vrati titl koji ne odgovara bas ovom fajlu).
     @GET("subtitles/{type}/{id}.json")
     suspend fun subtitles(
         @Path("type") type: String,
         @Path("id") id: String
+    ): SubtitleResponse
+
+    // Sa "extra" (videoHash+videoSize) - trazi titl upareno bas sa OVIM tacnim video fajlom,
+    // pa je sinhronizacija garantovana kad addon ima hash-matched rezultat.
+    @GET("subtitles/{type}/{id}/{extra}.json")
+    suspend fun subtitlesWithHash(
+        @Path("type") type: String,
+        @Path("id") id: String,
+        @Path("extra") extra: String
     ): SubtitleResponse
 
     companion object {
