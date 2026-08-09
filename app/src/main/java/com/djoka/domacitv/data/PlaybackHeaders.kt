@@ -11,4 +11,6 @@ data class StreamCandidate(
 // on sam prelazi na sledeci kandidat ako trenutni ne uspe da se pusti, bez ikakvog pitanja korisniku.
 object PlaybackQueue {
     var candidates: List<StreamCandidate> = emptyList()
+    var subtitleUrl: String? = null   // srpski ako postoji, inace engleski
+    var subtitleLabel: String? = null // "Srpski" ili "English", za prikaz u meniju titlova
 }
