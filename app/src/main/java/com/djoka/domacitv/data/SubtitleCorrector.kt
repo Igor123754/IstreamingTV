@@ -53,6 +53,22 @@ object SubtitleCorrector {
         }
     }
 
+    // Procenjuje ukupno trajanje titla (kraj poslednjeg bloka) - koristi se da automatski
+    // izaberemo kandidata ciji titl najbolje odgovara stvarnom trajanju filma, bez ikakve akcije korisnika.
+    suspend fun peekDurationMs(url: String): Long? {
+        val raw = downloadText(url) ?: return null
+        val blocks = parseSrt(raw)
+        val lastBlock = blocks.maxByOrNull { it.index } ?: return null
+        val endPart = lastBlock.timing.split("-->").getOrNull(1)?.trim() ?: return null
+        return parseTimestampToMs(endPart)
+    }
+
+    private fun parseTimestampToMs(ts: String): Long? {
+        val match = Regex("""(\d+):(\d+):(\d+)[,.](\d+)""").find(ts.trim()) ?: return null
+        val (h, m, s, ms) = match.destructured
+        return h.toLong() * 3600000 + m.toLong() * 60000 + s.toLong() * 1000 + ms.toLong()
+    }
+
     private suspend fun correctChunk(chunk: List<SrtBlock>, apiKey: String): Map<Int, String> {
         val prompt = buildString {
             append(
