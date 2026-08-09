@@ -1,5 +1,6 @@
 package com.djoka.domacitv.ui
 
+import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,7 +21,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -42,6 +45,8 @@ private const val BROWSER_USER_AGENT =
 private fun buildPlayer(
     context: android.content.Context,
     candidate: StreamCandidate,
+    subtitleUrl: String?,
+    subtitleLabel: String?,
     onError: () -> Unit
 ): ExoPlayer {
     val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
@@ -64,6 +69,23 @@ private fun buildPlayer(
         )
     }
 
+    val mediaItemBuilder = MediaItem.Builder().setUri(candidate.url)
+
+    if (!subtitleUrl.isNullOrBlank()) {
+        val mimeType = if (subtitleUrl.endsWith(".vtt", ignoreCase = true)) {
+            MimeTypes.TEXT_VTT
+        } else {
+            MimeTypes.APPLICATION_SUBRIP
+        }
+        val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUrl))
+            .setMimeType(mimeType)
+            .setLanguage(if (subtitleLabel == "Srpski") "sr" else "en")
+            .setLabel(subtitleLabel ?: "Titl")
+            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
+            .build()
+        mediaItemBuilder.setSubtitleConfigurations(listOf(subtitleConfig))
+    }
+
     return ExoPlayer.Builder(context)
         .setMediaSourceFactory(mediaSourceFactory)
         .setLoadControl(loadControl)
@@ -76,7 +98,7 @@ private fun buildPlayer(
                     onError()
                 }
             })
-            setMediaItem(MediaItem.fromUri(candidate.url))
+            setMediaItem(mediaItemBuilder.build())
             prepare()
             playWhenReady = true
         }
@@ -87,11 +109,21 @@ private fun buildPlayer(
 fun PlayerScreen() {
     val context = LocalContext.current
 
-    // Pokupi sve kandidate jednom, "potrosi" red - ne ostaje za sledece pustanje
+    // Pokupi sve kandidate i titl jednom, "potrosi" red - ne ostaje za sledece pustanje
     val candidates = remember {
         val list = PlaybackQueue.candidates
         PlaybackQueue.candidates = emptyList()
         list
+    }
+    val subtitleUrl = remember {
+        val url = PlaybackQueue.subtitleUrl
+        PlaybackQueue.subtitleUrl = null
+        url
+    }
+    val subtitleLabel = remember {
+        val label = PlaybackQueue.subtitleLabel
+        PlaybackQueue.subtitleLabel = null
+        label
     }
 
     var currentIndex by remember { mutableStateOf(0) }
@@ -112,7 +144,7 @@ fun PlayerScreen() {
         }
         isBuffering = true
         player?.release()
-        player = buildPlayer(context, candidates[currentIndex]) {
+        player = buildPlayer(context, candidates[currentIndex], subtitleUrl, subtitleLabel) {
             // Ovaj link ne radi - tiho predji na sledeci, u pozadini
             currentIndex += 1
         }
