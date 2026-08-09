@@ -37,16 +37,31 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import com.djoka.domacitv.data.PlaybackQueue
 import com.djoka.domacitv.data.StreamCandidate
+import com.djoka.domacitv.data.SubtitleTrackInfo
 
 private const val BROWSER_USER_AGENT =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 
 @UnstableApi
+private fun buildSubtitleConfig(track: SubtitleTrackInfo, isDefault: Boolean): MediaItem.SubtitleConfiguration {
+    val mimeType = if (track.url.endsWith(".vtt", ignoreCase = true)) {
+        MimeTypes.TEXT_VTT
+    } else {
+        MimeTypes.APPLICATION_SUBRIP
+    }
+    return MediaItem.SubtitleConfiguration.Builder(Uri.parse(track.url))
+        .setMimeType(mimeType)
+        .setLanguage(if (track.label.startsWith("Srpski")) "sr" else "en")
+        .setLabel(track.label)
+        .setSelectionFlags(if (isDefault) C.SELECTION_FLAG_DEFAULT else 0)
+        .build()
+}
+
+@UnstableApi
 private fun buildPlayer(
     context: android.content.Context,
     candidate: StreamCandidate,
-    subtitleUrl: String?,
-    subtitleLabel: String?,
+    subtitleTracks: List<SubtitleTrackInfo>,
     onError: () -> Unit
 ): ExoPlayer {
     val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
@@ -62,28 +77,21 @@ private fun buildPlayer(
         .setBufferDurationsMs(30_000, 90_000, 3_000, 5_000)
         .build()
 
-    // Kad video ima vise audio zapisa, uvek prvo probaj engleski (ako postoji)
+    // Kad video ima vise audio zapisa, uvek prvo probaj engleski (ako postoji).
+    // Za titl: uvek prednost nasem spoljasnjem srpskom nad bilo kojim ugradjenim (npr. engleskim) trackom.
     val trackSelector = DefaultTrackSelector(context).apply {
         setParameters(
-            buildUponParameters().setPreferredAudioLanguages("eng", "en")
+            buildUponParameters()
+                .setPreferredAudioLanguages("eng", "en")
+                .setPreferredTextLanguage("sr")
+                .setSelectUndeterminedTextLanguage(false)
         )
     }
 
     val mediaItemBuilder = MediaItem.Builder().setUri(candidate.url)
-
-    if (!subtitleUrl.isNullOrBlank()) {
-        val mimeType = if (subtitleUrl.endsWith(".vtt", ignoreCase = true)) {
-            MimeTypes.TEXT_VTT
-        } else {
-            MimeTypes.APPLICATION_SUBRIP
-        }
-        val subtitleConfig = MediaItem.SubtitleConfiguration.Builder(Uri.parse(subtitleUrl))
-            .setMimeType(mimeType)
-            .setLanguage(if (subtitleLabel?.startsWith("Srpski") == true) "sr" else "en")
-            .setLabel(subtitleLabel ?: "Titl")
-            .setSelectionFlags(C.SELECTION_FLAG_DEFAULT)
-            .build()
-        mediaItemBuilder.setSubtitleConfigurations(listOf(subtitleConfig))
+    if (subtitleTracks.isNotEmpty()) {
+        val configs = subtitleTracks.mapIndexed { i, track -> buildSubtitleConfig(track, isDefault = i == 0) }
+        mediaItemBuilder.setSubtitleConfigurations(configs)
     }
 
     return ExoPlayer.Builder(context)
@@ -109,21 +117,16 @@ private fun buildPlayer(
 fun PlayerScreen() {
     val context = LocalContext.current
 
-    // Pokupi sve kandidate i titl jednom, "potrosi" red - ne ostaje za sledece pustanje
+    // Pokupi sve kandidate i titlove jednom, "potrosi" red - ne ostaje za sledece pustanje
     val candidates = remember {
         val list = PlaybackQueue.candidates
         PlaybackQueue.candidates = emptyList()
         list
     }
-    val subtitleUrl = remember {
-        val url = PlaybackQueue.subtitleUrl
-        PlaybackQueue.subtitleUrl = null
-        url
-    }
-    val subtitleLabel = remember {
-        val label = PlaybackQueue.subtitleLabel
-        PlaybackQueue.subtitleLabel = null
-        label
+    val subtitleTracks = remember {
+        val list = PlaybackQueue.subtitles
+        PlaybackQueue.subtitles = emptyList()
+        list
     }
 
     var currentIndex by remember { mutableStateOf(0) }
@@ -144,7 +147,7 @@ fun PlayerScreen() {
         }
         isBuffering = true
         player?.release()
-        player = buildPlayer(context, candidates[currentIndex], subtitleUrl, subtitleLabel) {
+        player = buildPlayer(context, candidates[currentIndex], subtitleTracks) {
             // Ovaj link ne radi - tiho predji na sledeci, u pozadini
             currentIndex += 1
         }
