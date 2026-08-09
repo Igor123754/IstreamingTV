@@ -1,6 +1,7 @@
 package com.djoka.domacitv.data
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -43,7 +44,7 @@ data class DetailUiState(
     val playbackUrl: String? = null
 )
 
-class DetailViewModel : ViewModel() {
+class DetailViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tmdb = TmdbApi.create()
     private val apiKey = TmdbApi.key()
@@ -357,6 +358,7 @@ class DetailViewModel : ViewModel() {
     }
 
     // Srpski ako postoji, inace engleski. Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
+    // Ako je srpski i imamo Gemini kljuc, u pozadini pokusavamo AI ispravku prevoda (nikad ne dira tajminge).
     private suspend fun fetchSubtitle(type: String, streamId: String) {
         try {
             val subs = subtitleApi.subtitles(type, streamId).subtitles
@@ -367,12 +369,29 @@ class DetailViewModel : ViewModel() {
             val english = subs.firstOrNull { it.lang.lowercase().startsWith("en") }
             val chosen = serbian ?: english
 
-            PlaybackQueue.subtitleUrl = chosen?.url
-            PlaybackQueue.subtitleLabel = when {
-                chosen == null -> null
-                chosen == serbian -> "Srpski"
-                else -> "English"
+            if (chosen == null) {
+                PlaybackQueue.subtitleUrl = null
+                PlaybackQueue.subtitleLabel = null
+                return
             }
+
+            var finalUrl = chosen.url
+            var label = if (chosen == serbian) "Srpski" else "English"
+
+            if (chosen == serbian) {
+                val corrected = try {
+                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), chosen.url)
+                } catch (e: Exception) {
+                    null
+                }
+                if (corrected != null) {
+                    finalUrl = corrected
+                    label = "Srpski (AI ispravljen)"
+                }
+            }
+
+            PlaybackQueue.subtitleUrl = finalUrl
+            PlaybackQueue.subtitleLabel = label
         } catch (e: Exception) {
             // Nema titla - nije kriticno, video ide bez njega
         }
