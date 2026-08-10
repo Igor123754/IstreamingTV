@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -128,6 +129,11 @@ fun PlayerScreen() {
         PlaybackQueue.subtitles = emptyList()
         list
     }
+    val debugInfo = remember {
+        val info = PlaybackQueue.debugInfo
+        PlaybackQueue.debugInfo = null
+        info
+    }
 
     var currentIndex by remember { mutableStateOf(0) }
     var player by remember { mutableStateOf<ExoPlayer?>(null) }
@@ -203,6 +209,16 @@ fun PlayerScreen() {
 
         if (isBuffering) {
             CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
+        }
+
+        // PRIVREMENO - da vidimo sta addon stvarno vraca za titlove, skida se cim resimo problem
+        debugInfo?.let { info ->
+            Text(
+                text = info,
+                color = Color.Yellow,
+                fontSize = 12.sp,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)
+            )
         }
     }
 }
