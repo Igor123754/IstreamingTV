@@ -360,33 +360,11 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             .map { StreamCandidate(it.url!!, it.behaviorHints?.headers) }
     }
 
-    // Srpski ako postoji, inace engleski. Prvo probamo hash-match (garantovano sinhronizovan sa
-    // OVIM tacnim fajlom); ako addon nema hash-match rezultat, padamo nazad na obican lookup po naslovu.
+    // Srpski ako postoji, inace engleski (obican lookup po naslovu - addon sam vraca sve dostupne jezike).
     // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
     private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
-            var subs = emptyList<SubtitleItem>()
-            var isHashMatched = false
-
-            if (streamUrl != null) {
-                val hash = VideoHasher.compute(streamUrl, streamHeaders)
-                if (hash != null) {
-                    try {
-                        val extra = "videoSize=${hash.fileSize}&videoHash=${hash.hashHex}"
-                        val hashResults = subtitleApi.subtitlesWithHash(type, streamId, extra).subtitles
-                        if (hashResults.isNotEmpty()) {
-                            subs = hashResults
-                            isHashMatched = true
-                        }
-                    } catch (e: Exception) {
-                        // Nastavljamo na obican lookup ispod
-                    }
-                }
-            }
-
-            if (subs.isEmpty()) {
-                subs = subtitleApi.subtitles(type, streamId).subtitles
-            }
+            var subs = subtitleApi.subtitles(type, streamId).subtitles
 
             // Odbaci stavke sa nepotpunim podacima (bez pucanja cele liste zbog jedne lose stavke)
             subs = subs.filter { !it.id.isNullOrBlank() && !it.url.isNullOrBlank() && !it.lang.isNullOrBlank() }
@@ -400,7 +378,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             // Hash-match je vec garantovano tacan fajl - ne treba dalja provera.
             // Kod obicnog lookup-a (vise mogucih kandidata), sam biramo onaj cije trajanje titla
             // najbolje odgovara stvarnom trajanju filma - potpuno automatski, bez ikakve akcije korisnika.
-            if (!isHashMatched && serbianList.size > 1 && expectedRuntimeMinutes != null && expectedRuntimeMinutes!! > 0) {
+            if (serbianList.size > 1 && expectedRuntimeMinutes != null && expectedRuntimeMinutes!! > 0) {
                 val targetMs = expectedRuntimeMinutes!! * 60_000L
                 val candidates = serbianList.take(4)
                 val withDuration = coroutineScope {
