@@ -366,6 +366,13 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
         try {
             var subs = subtitleApi.subtitles(type, streamId).subtitles
 
+            // PRIVREMENO - da vidimo sta addon stvarno vraca (skida se cim resimo problem)
+            PlaybackQueue.debugInfo = if (subs.isEmpty()) {
+                "Titlovi: addon vratio 0 stavki za $streamId"
+            } else {
+                "Titlovi (${subs.size}): " + subs.joinToString(", ") { "${it.lang}" }
+            }
+
             // Odbaci stavke sa nepotpunim podacima (bez pucanja cele liste zbog jedne lose stavke)
             subs = subs.filter { !it.id.isNullOrBlank() && !it.url.isNullOrBlank() && !it.lang.isNullOrBlank() }
 
@@ -424,7 +431,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
             PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
-            // Nema titla - nije kriticno, video ide bez njega
+            PlaybackQueue.debugInfo = "Titlovi: greška - ${e.javaClass.simpleName}: ${e.message}"
         }
     }
 
