@@ -8,9 +8,9 @@ import retrofit2.http.Path
 data class SubtitleResponse(val subtitles: List<SubtitleItem> = emptyList())
 
 data class SubtitleItem(
-    val id: String,
-    val url: String,
-    val lang: String
+    val id: String? = null,
+    val url: String? = null,
+    val lang: String? = null
 )
 
 interface SubtitleAddonApi {
