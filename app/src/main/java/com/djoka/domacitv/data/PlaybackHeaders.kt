@@ -18,4 +18,5 @@ data class SubtitleTrackInfo(
 object PlaybackQueue {
     var candidates: List<StreamCandidate> = emptyList()
     var subtitles: List<SubtitleTrackInfo> = emptyList()
+    var debugInfo: String? = null   // privremeno - sirov spisak jezika koje je addon vratio, da vidimo pravo stanje
 }
