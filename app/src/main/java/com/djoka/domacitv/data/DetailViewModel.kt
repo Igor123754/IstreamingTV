@@ -388,11 +388,14 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                 subs = subtitleApi.subtitles(type, streamId).subtitles
             }
 
+            // Odbaci stavke sa nepotpunim podacima (bez pucanja cele liste zbog jedne lose stavke)
+            subs = subs.filter { !it.id.isNullOrBlank() && !it.url.isNullOrBlank() && !it.lang.isNullOrBlank() }
+
             var serbianList = subs.filter {
-                val l = it.lang.lowercase()
+                val l = it.lang.orEmpty().lowercase()
                 l == "srp" || l == "scc" || l == "ser" || l.startsWith("sr")
             }
-            val english = subs.firstOrNull { it.lang.lowercase().startsWith("en") }
+            val english = subs.firstOrNull { it.lang.orEmpty().lowercase().startsWith("en") }
 
             // Hash-match je vec garantovano tacan fajl - ne treba dalja provera.
             // Kod obicnog lookup-a (vise mogucih kandidata), sam biramo onaj cije trajanje titla
@@ -402,7 +405,7 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                 val candidates = serbianList.take(4)
                 val withDuration = coroutineScope {
                     candidates.map { item ->
-                        async { item to SubtitleCorrector.peekDurationMs(item.url) }
+                        async { item to SubtitleCorrector.peekDurationMs(item.url!!) }
                     }.awaitAll()
                 }
                 val ranked = withDuration
@@ -425,21 +428,21 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             if (serbianList.isNotEmpty()) {
                 val primary = serbianList.first()
                 val corrected = try {
-                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), primary.url)
+                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), primary.url!!)
                 } catch (e: Exception) {
                     null
                 }
                 tracks.add(
                     SubtitleTrackInfo(
-                        url = corrected ?: primary.url,
+                        url = corrected ?: primary.url!!,
                         label = if (corrected != null) "Srpski (AI ispravljen)" else "Srpski"
                     )
                 )
                 serbianList.drop(1).take(2).forEachIndexed { i, extra ->
-                    tracks.add(SubtitleTrackInfo(url = extra.url, label = "Srpski (alt ${i + 2})"))
+                    tracks.add(SubtitleTrackInfo(url = extra.url!!, label = "Srpski (alt ${i + 2})"))
                 }
             }
-            english?.let { tracks.add(SubtitleTrackInfo(url = it.url, label = "English")) }
+            english?.let { tracks.add(SubtitleTrackInfo(url = it.url!!, label = "English")) }
 
             PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
