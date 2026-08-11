@@ -27,6 +27,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -80,13 +82,13 @@ private fun buildPlayer(
 
     // Kad video ima vise audio zapisa, uvek prvo probaj engleski (ako postoji).
     // Za titl: uvek prednost nasem spoljasnjem srpskom nad bilo kojim ugradjenim (npr. engleskim) trackom.
+    val baseTrackParams = androidx.media3.exoplayer.trackselection.DefaultTrackSelector.Parameters.Builder(context)
+        .setPreferredAudioLanguages("eng", "en")
+        .setPreferredTextLanguage("sr")
+        .setSelectUndeterminedTextLanguage(false)
+        .build()
     val trackSelector = DefaultTrackSelector(context).apply {
-        setParameters(
-            buildUponParameters()
-                .setPreferredAudioLanguages("eng", "en")
-                .setPreferredTextLanguage("sr")
-                .setSelectUndeterminedTextLanguage(false)
-        )
+        setParameters(baseTrackParams)
     }
 
     val mediaItemBuilder = MediaItem.Builder().setUri(candidate.url)
@@ -105,6 +107,33 @@ private fun buildPlayer(
                 override fun onPlayerError(error: PlaybackException) {
                     // Ne prikazuj gresku korisniku - tiho probaj sledeci link u pozadini
                     onError()
+                }
+
+                // Cim se saznaju svi track-ovi (ukljucujuci ugradjene titlove iz samog fajla),
+                // ugasi sve tekstualne track-ove OSIM naseg srpskog - u meniju plejera ostaje
+                // samo "Srpski" i "Nista", bez engleskog ili bilo kog ugradjenog jezika.
+                override fun onTracksChanged(tracks: Tracks) {
+                    var params = baseTrackParams.buildUpon()
+                    var changed = false
+                    for (group in tracks.groups) {
+                        if (group.type != C.TRACK_TYPE_TEXT) continue
+                        var isOurSerbian = false
+                        for (i in 0 until group.length) {
+                            if (group.getTrackFormat(i).label == "Srpski") {
+                                isOurSerbian = true
+                                break
+                            }
+                        }
+                        if (!isOurSerbian) {
+                            params = params.addOverride(
+                                TrackSelectionOverride(group.mediaTrackGroup, emptyList())
+                            )
+                            changed = true
+                        }
+                    }
+                    if (changed) {
+                        trackSelectionParameters = params.build()
+                    }
                 }
             })
             setMediaItem(mediaItemBuilder.build())
