@@ -211,7 +211,7 @@ fun PlayerScreen() {
             CircularProgressIndicator(color = Color.White, modifier = Modifier.align(Alignment.Center))
         }
 
-        // PRIVREMENO - da vidimo sta addon stvarno vraca za titlove, skida se cim resimo problem
+        // PRIVREMENO - da potvrdimo da hash-based zahtev sada nalazi srpski, skida se posle testa
         debugInfo?.let { info ->
             Text(
                 text = info,
