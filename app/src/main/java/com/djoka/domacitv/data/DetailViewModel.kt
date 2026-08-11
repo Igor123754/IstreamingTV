@@ -363,6 +363,8 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
     // Srpski ako postoji, inace engleski. Nuvio (i drugi Stremio klijenti) uz zahtev za titlove
     // salju i hash fajla - to addon-u ocigledno otkljucava vise/tacnije rezultate (potvrdjeno testom).
     // Zato hash probamo prvo, obican lookup po naslovu samo kao rezerva ako hash ne uspe.
+    // NAMERNO jednostavno i brzo (bez provere trajanja, bez AI ispravke ovde) - to je ranije
+    // usporavalo pipeline toliko da plejer krene pre nego sto se titl stigne pripremiti.
     // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
     private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
@@ -384,71 +386,21 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
                 subs = subtitleApi.subtitles(type, streamId).subtitles
             }
 
-            // PRIVREMENO - da vidimo sta addon stvarno vraca (skida se cim potvrdimo da radi)
-            PlaybackQueue.debugInfo = if (subs.isEmpty()) {
-                "Titlovi: addon vratio 0 stavki za $streamId"
-            } else {
-                "Titlovi (${subs.size}): " + subs.joinToString(", ") { "${it.lang}" }
-            }
-
-            // Odbaci stavke sa nepotpunim podacima (bez pucanja cele liste zbog jedne lose stavke)
             subs = subs.filter { !it.id.isNullOrBlank() && !it.url.isNullOrBlank() && !it.lang.isNullOrBlank() }
 
-            var serbianList = subs.filter {
+            val serbian = subs.firstOrNull {
                 val l = it.lang.orEmpty().lowercase()
                 l == "srp" || l == "scc" || l == "ser" || l.startsWith("sr")
             }
             val english = subs.firstOrNull { it.lang.orEmpty().lowercase().startsWith("en") }
 
-            // Ako imamo vise srpskih kandidata, sam biramo onaj cije trajanje titla najbolje
-            // odgovara stvarnom trajanju filma - potpuno automatski, bez ikakve akcije korisnika.
-            if (serbianList.size > 1 && expectedRuntimeMinutes != null && expectedRuntimeMinutes!! > 0) {
-                val targetMs = expectedRuntimeMinutes!! * 60_000L
-                val candidates = serbianList.take(4)
-                val withDuration = coroutineScope {
-                    candidates.map { item ->
-                        async { item to SubtitleCorrector.peekDurationMs(item.url!!) }
-                    }.awaitAll()
-                }
-                val ranked = withDuration
-                    .filter { it.second != null }
-                    .sortedBy { kotlin.math.abs(it.second!! - targetMs) }
-                    .map { it.first }
-                if (ranked.isNotEmpty()) {
-                    // Zadrzi i one bez izracunatog trajanja na kraju liste (bolje nego da ih izgubimo)
-                    val withoutDuration = candidates.filter { c -> ranked.none { it.id == c.id } }
-                    serbianList = ranked + withoutDuration
-                } else {
-                    serbianList = candidates
-                }
-            } else {
-                serbianList = serbianList.take(2)
-            }
-
             val tracks = mutableListOf<SubtitleTrackInfo>()
-
-            if (serbianList.isNotEmpty()) {
-                val primary = serbianList.first()
-                val corrected = try {
-                    SubtitleCorrector.correctSerbianSubtitle(getApplication(), primary.url!!)
-                } catch (e: Exception) {
-                    null
-                }
-                tracks.add(
-                    SubtitleTrackInfo(
-                        url = corrected ?: primary.url!!,
-                        label = if (corrected != null) "Srpski (AI ispravljen)" else "Srpski"
-                    )
-                )
-                serbianList.drop(1).take(2).forEachIndexed { i, extra ->
-                    tracks.add(SubtitleTrackInfo(url = extra.url!!, label = "Srpski (alt ${i + 2})"))
-                }
-            }
+            serbian?.let { tracks.add(SubtitleTrackInfo(url = it.url!!, label = "Srpski")) }
             english?.let { tracks.add(SubtitleTrackInfo(url = it.url!!, label = "English")) }
 
             PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
-            PlaybackQueue.debugInfo = "Titlovi: greška - ${e.javaClass.simpleName}: ${e.message}"
+            // Nema titla - nije kriticno, video ide bez njega
         }
     }
 
