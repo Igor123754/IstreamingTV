@@ -360,13 +360,31 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             .map { StreamCandidate(it.url!!, it.behaviorHints?.headers) }
     }
 
-    // Srpski ako postoji, inace engleski (obican lookup po naslovu - addon sam vraca sve dostupne jezike).
+    // Srpski ako postoji, inace engleski. Nuvio (i drugi Stremio klijenti) uz zahtev za titlove
+    // salju i hash fajla - to addon-u ocigledno otkljucava vise/tacnije rezultate (potvrdjeno testom).
+    // Zato hash probamo prvo, obican lookup po naslovu samo kao rezerva ako hash ne uspe.
     // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
     private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
-            var subs = subtitleApi.subtitles(type, streamId).subtitles
+            var subs = emptyList<SubtitleItem>()
 
-            // PRIVREMENO - da vidimo sta addon stvarno vraca (skida se cim resimo problem)
+            if (streamUrl != null) {
+                try {
+                    val hash = VideoHasher.compute(streamUrl, streamHeaders)
+                    if (hash != null) {
+                        val extra = "videoSize=${hash.fileSize}&videoHash=${hash.hashHex}"
+                        subs = subtitleApi.subtitlesWithHash(type, streamId, extra).subtitles
+                    }
+                } catch (e: Exception) {
+                    // Nastavljamo na obican lookup ispod
+                }
+            }
+
+            if (subs.isEmpty()) {
+                subs = subtitleApi.subtitles(type, streamId).subtitles
+            }
+
+            // PRIVREMENO - da vidimo sta addon stvarno vraca (skida se cim potvrdimo da radi)
             PlaybackQueue.debugInfo = if (subs.isEmpty()) {
                 "Titlovi: addon vratio 0 stavki za $streamId"
             } else {
@@ -382,9 +400,8 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             }
             val english = subs.firstOrNull { it.lang.orEmpty().lowercase().startsWith("en") }
 
-            // Hash-match je vec garantovano tacan fajl - ne treba dalja provera.
-            // Kod obicnog lookup-a (vise mogucih kandidata), sam biramo onaj cije trajanje titla
-            // najbolje odgovara stvarnom trajanju filma - potpuno automatski, bez ikakve akcije korisnika.
+            // Ako imamo vise srpskih kandidata, sam biramo onaj cije trajanje titla najbolje
+            // odgovara stvarnom trajanju filma - potpuno automatski, bez ikakve akcije korisnika.
             if (serbianList.size > 1 && expectedRuntimeMinutes != null && expectedRuntimeMinutes!! > 0) {
                 val targetMs = expectedRuntimeMinutes!! * 60_000L
                 val candidates = serbianList.take(4)
