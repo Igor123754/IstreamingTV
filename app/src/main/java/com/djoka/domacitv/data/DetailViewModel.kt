@@ -1,12 +1,15 @@
 package com.djoka.domacitv.data
 
 import android.app.Application
+import android.media.MediaMetadataRetriever
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -364,8 +367,8 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
     // salju i hash fajla - to addon-u ocigledno otkljucava vise/tacnije rezultate (potvrdjeno testom).
     // Zato hash probamo prvo, obican lookup po naslovu samo kao rezerva ako hash ne uspe.
     // Ako ima vise srpskih kandidata, brzo (paralelno, bez AI poziva) proveravamo cije trajanje
-    // titla najbolje odgovara stvarnom trajanju filma - to je ono sto realno resava sinhronizaciju,
-    // a ostaje brzo jer ne cekamo Gemini (to je bio spor deo, ne provera trajanja).
+    // titla najbolje odgovara STVARNOM trajanju pustenog video fajla (ne TMDB proceni u minutima -
+    // ta je zaokruzena i ne zna nista o fps-u konkretnog fajla, pa moze da zavara poredjenje).
     // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
     private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
@@ -397,19 +400,22 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             val serbian: SubtitleItem? = when {
                 serbianCandidates.isEmpty() -> null
                 serbianCandidates.size == 1 -> serbianCandidates.first()
-                expectedRuntimeMinutes == null || expectedRuntimeMinutes!! <= 0 -> serbianCandidates.first()
                 else -> {
-                    val targetMs = expectedRuntimeMinutes!! * 60_000L
-                    val withDuration = coroutineScope {
-                        serbianCandidates.map { item ->
-                            async { item to SubtitleCorrector.peekDurationMs(item.url!!) }
-                        }.awaitAll()
+                    val actualDurationMs = streamUrl?.let { readVideoDurationMs(it, streamHeaders) }
+                    if (actualDurationMs == null) {
+                        serbianCandidates.first()
+                    } else {
+                        val withDuration = coroutineScope {
+                            serbianCandidates.map { item ->
+                                async { item to SubtitleCorrector.peekDurationMs(item.url!!) }
+                            }.awaitAll()
+                        }
+                        withDuration
+                            .filter { it.second != null }
+                            .minByOrNull { kotlin.math.abs(it.second!! - actualDurationMs) }
+                            ?.first
+                            ?: serbianCandidates.first()
                     }
-                    withDuration
-                        .filter { it.second != null }
-                        .minByOrNull { kotlin.math.abs(it.second!! - targetMs) }
-                        ?.first
-                        ?: serbianCandidates.first()
                 }
             }
 
@@ -419,6 +425,19 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
             PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
             // Nema titla - nije kriticno, video ide bez njega
+        }
+    }
+
+    // Cita stvarno trajanje video fajla direktno iz njega (samo metapodaci/zaglavlje, ne ceo fajl)
+    private suspend fun readVideoDurationMs(url: String, headers: Map<String, String>?): Long? = withContext(Dispatchers.IO) {
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(url, headers ?: emptyMap())
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+        } catch (e: Exception) {
+            null
+        } finally {
+            try { retriever.release() } catch (e: Exception) { /* ignorisi */ }
         }
     }
 
