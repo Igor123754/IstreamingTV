@@ -109,30 +109,21 @@ private fun buildPlayer(
                     onError()
                 }
 
-                // Cim se saznaju svi track-ovi (ukljucujuci ugradjene titlove iz samog fajla),
-                // ugasi sve tekstualne track-ove OSIM naseg srpskog - u meniju plejera ostaje
-                // samo "Srpski" i "Nista", bez engleskog ili bilo kog ugradjenog jezika.
+                // Cim se saznaju svi track-ovi, PRISILNO izaberi nas srpski titl (po jezickom kodu,
+                // ne po tekstu labele - pouzdanije). Ne gasimo ostale opcije u meniju (rizicno se
+                // pokazalo da to pokvari izbor u celini) - samo osiguravamo da srpski bude aktivan
+                // vec pri pustanju, bez ikakve akcije korisnika.
                 override fun onTracksChanged(tracks: Tracks) {
-                    var params = baseTrackParams.buildUpon()
-                    var changed = false
                     for (group in tracks.groups) {
                         if (group.type != C.TRACK_TYPE_TEXT) continue
-                        var isOurSerbian = false
                         for (i in 0 until group.length) {
-                            if (group.getTrackFormat(i).label == "Srpski") {
-                                isOurSerbian = true
-                                break
+                            if (group.getTrackFormat(i).language == "sr") {
+                                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                                    .addOverride(TrackSelectionOverride(group.mediaTrackGroup, listOf(i)))
+                                    .build()
+                                return
                             }
                         }
-                        if (!isOurSerbian) {
-                            params = params.addOverride(
-                                TrackSelectionOverride(group.mediaTrackGroup, emptyList())
-                            )
-                            changed = true
-                        }
-                    }
-                    if (changed) {
-                        trackSelectionParameters = params.build()
                     }
                 }
             })
