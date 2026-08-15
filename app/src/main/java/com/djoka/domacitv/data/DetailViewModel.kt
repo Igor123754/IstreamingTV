@@ -363,8 +363,9 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
     // Srpski ako postoji, inace engleski. Nuvio (i drugi Stremio klijenti) uz zahtev za titlove
     // salju i hash fajla - to addon-u ocigledno otkljucava vise/tacnije rezultate (potvrdjeno testom).
     // Zato hash probamo prvo, obican lookup po naslovu samo kao rezerva ako hash ne uspe.
-    // NAMERNO jednostavno i brzo (bez provere trajanja, bez AI ispravke ovde) - to je ranije
-    // usporavalo pipeline toliko da plejer krene pre nego sto se titl stigne pripremiti.
+    // Ako ima vise srpskih kandidata, brzo (paralelno, bez AI poziva) proveravamo cije trajanje
+    // titla najbolje odgovara stvarnom trajanju filma - to je ono sto realno resava sinhronizaciju,
+    // a ostaje brzo jer ne cekamo Gemini (to je bio spor deo, ne provera trajanja).
     // Ne blokira pustanje videa - ako ne stigne/ne nadje se, video krece bez titla.
     private suspend fun fetchSubtitle(type: String, streamId: String, streamUrl: String?, streamHeaders: Map<String, String>?) {
         try {
@@ -388,15 +389,32 @@ class DetailViewModel(application: Application) : AndroidViewModel(application) 
 
             subs = subs.filter { !it.id.isNullOrBlank() && !it.url.isNullOrBlank() && !it.lang.isNullOrBlank() }
 
-            val serbian = subs.firstOrNull {
+            val serbianCandidates = subs.filter {
                 val l = it.lang.orEmpty().lowercase()
                 l == "srp" || l == "scc" || l == "ser" || l.startsWith("sr")
+            }.take(5)
+
+            val serbian: SubtitleItem? = when {
+                serbianCandidates.isEmpty() -> null
+                serbianCandidates.size == 1 -> serbianCandidates.first()
+                expectedRuntimeMinutes == null || expectedRuntimeMinutes!! <= 0 -> serbianCandidates.first()
+                else -> {
+                    val targetMs = expectedRuntimeMinutes!! * 60_000L
+                    val withDuration = coroutineScope {
+                        serbianCandidates.map { item ->
+                            async { item to SubtitleCorrector.peekDurationMs(item.url!!) }
+                        }.awaitAll()
+                    }
+                    withDuration
+                        .filter { it.second != null }
+                        .minByOrNull { kotlin.math.abs(it.second!! - targetMs) }
+                        ?.first
+                        ?: serbianCandidates.first()
+                }
             }
-            val english = subs.firstOrNull { it.lang.orEmpty().lowercase().startsWith("en") }
 
             val tracks = mutableListOf<SubtitleTrackInfo>()
             serbian?.let { tracks.add(SubtitleTrackInfo(url = it.url!!, label = "Srpski")) }
-            english?.let { tracks.add(SubtitleTrackInfo(url = it.url!!, label = "English")) }
 
             PlaybackQueue.subtitles = tracks
         } catch (e: Exception) {
